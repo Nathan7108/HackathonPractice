@@ -20,6 +20,7 @@ models/*.joblib
 # Data (large downloaded datasets)
 data/gdelt/*.csv
 data/gdelt/*.zip
+data/gdelt/zips/
 data/acled/*.csv
 data/ucdp/*.csv
 data/world_bank/*.csv
