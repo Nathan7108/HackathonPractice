@@ -2,6 +2,7 @@
 # New ACLED API: OAuth at acleddata.com, Bearer token, pagination 5000/page.
 
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -22,6 +23,7 @@ COUNTRIES = {
 }
 
 TOKEN_URL = "https://acleddata.com/oauth/token"
+LOGIN_URL = "https://acleddata.com/user/login?_format=json"
 API_URL = "https://acleddata.com/api/acled/read?_format=json"
 PAGE_LIMIT = 5000
 FIELDS = "event_date|event_type|sub_event_type|fatalities|actor1|actor2|admin1|latitude|longitude|notes"
@@ -44,18 +46,52 @@ def get_acled_token(username: str, password: str) -> str:
     return resp.json()["access_token"]
 
 
+def get_acled_session(username: str, password: str) -> requests.Session:
+    """
+    Cookie-based login (same as browser). Use when OAuth returns 403.
+    Docs: https://acleddata.com/api-documentation/getting-started
+    """
+    session = requests.Session()
+    session.headers["Content-Type"] = "application/json"
+    resp = session.post(
+        LOGIN_URL,
+        json={"name": username, "pass": password},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if "current_user" not in data:
+        raise RuntimeError("Cookie login failed: no current_user in response")
+    return session
+
+
 def fetch_acled(
     country: str,
-    token: str,
+    token: str | None = None,
+    session: requests.Session | None = None,
     start_date: str = "2020-01-01",
     end_date: str = "2026-02-28",
 ) -> pd.DataFrame:
     """
     Fetch ACLED events for one country with pagination.
+    Use either token (OAuth) or session (cookie-based). If both set, token is used.
     Returns DataFrame with columns: event_date, event_type, sub_event_type,
     fatalities, actor1, actor2, admin1, latitude, longitude, notes.
     """
-    headers = {"Authorization": f"Bearer {token}"}
+    if token:
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+        get = requests.get
+        req_kw = {"headers": headers}
+    elif session:
+        headers = {"Content-Type": "application/json"}
+        get = session.get
+        req_kw = {"headers": headers}
+    else:
+        raise ValueError("Provide either token or session")
+
     all_data = []
     page = 1
 
@@ -69,15 +105,27 @@ def fetch_acled(
             "page": page,
         }
         try:
-            response = requests.get(
+            response = get(
                 API_URL,
                 params=params,
-                headers=headers,
                 timeout=60,
+                **req_kw,
             )
+            if response.status_code == 403:
+                try:
+                    body = response.json()
+                    msg = body.get("message", body.get("error", response.text or "Access denied"))
+                except Exception:
+                    msg = response.text or "Access denied"
+                print(
+                    f"  Warning: 403 Forbidden for {country}. "
+                    f"ACLED says: {msg}. "
+                    "Log in at https://acleddata.com: accept consent, complete profile, ensure your account has API access."
+                )
+                break
             response.raise_for_status()
             data = response.json()
-        except Exception as e:
+        except requests.RequestException as e:
             print(f"  Warning: fetch failed for {country} page {page}: {e}")
             break
 
@@ -160,41 +208,82 @@ def compute_acled_features(df: pd.DataFrame, window_days: int = 30) -> dict:
     }
 
 
+def _repo_root() -> Path:
+    """Project root (where .env lives). backend/ml/data/fetch_acled.py -> repo root."""
+    return Path(__file__).resolve().parents[3]
+
+
 def _data_dir() -> Path:
     """Project data dir: data/acled/ (from repo root)."""
-    # Resolve from this file: backend/ml/data/fetch_acled.py -> repo root
-    root = Path(__file__).resolve().parents[3]
-    d = root / "data" / "acled"
+    d = _repo_root() / "data" / "acled"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 if __name__ == "__main__":
-    load_dotenv()
+    # Load .env from project root so it works regardless of cwd
+    env_path = _repo_root() / ".env"
+    load_dotenv(dotenv_path=env_path)
+    if not env_path.exists():
+        print(f"Note: No .env at {env_path}")
     username = os.getenv("ACLED_USERNAME")
     password = os.getenv("ACLED_PASSWORD")
-    if not username or not password:
-        print("Set ACLED_USERNAME and ACLED_PASSWORD in .env")
-        raise SystemExit(1)
+    token = os.getenv("ACLED_ACCESS_TOKEN", "").strip()
 
-    token = get_acled_token(username, password)
-    print("Token acquired.")
+    session = None
+    # Prefer OAuth token first (so new token gets used)
+    if token:
+        print("Using ACLED_ACCESS_TOKEN from .env.")
+        r = requests.get(
+            API_URL,
+            params={"country": "Ukraine", "limit": 1},
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            timeout=30,
+        )
+        if r.status_code == 200:
+            print("Token valid. Fetching data for 8 countries (first request may take 30–60s)...")
+        elif r.status_code == 403 and username and password:
+            print("Token returned 403. Trying cookie-based login (user/login)...")
+            try:
+                session = get_acled_session(username, password)
+                print("Session started. Using cookie auth for all requests.")
+                token = None
+            except Exception as e:
+                print(f"Cookie login failed: {e}")
+        else:
+            print(f"Token test got HTTP {r.status_code}. Continuing anyway.")
+    if session is None and not token and username and password:
+        print("Logging in via cookie-based auth (user/login)...")
+        try:
+            session = get_acled_session(username, password)
+            print("Session started. Using cookie auth for all requests.")
+        except Exception as e:
+            print(f"Cookie login failed: {e}")
+            raise SystemExit(1) from e
+    if session is None and not token:
+        print("Set ACLED_ACCESS_TOKEN or ACLED_USERNAME + ACLED_PASSWORD in .env")
+        raise SystemExit(1)
 
     data_dir = _data_dir()
     country_names = list(COUNTRIES.values())
 
-    for i, country in enumerate(country_names):
-        try:
-            df = fetch_acled(country, token)
-            n = len(df)
-            out_path = data_dir / f"{country.lower().replace(' ', '_')}.csv"
-            if n > 0:
-                df.to_csv(out_path, index=False)
-            print(f"  {country}: {n} events -> {out_path.name}")
-        except Exception as e:
-            print(f"  {country}: failed - {e}")
-        if i < len(country_names) - 1:
-            time.sleep(1)
+    try:
+        for i, country in enumerate(country_names):
+            try:
+                print(f"  Fetching {country}...", end=" ", flush=True)
+                df = fetch_acled(country, token=token, session=session)
+                n = len(df)
+                out_path = data_dir / f"{country.lower().replace(' ', '_')}.csv"
+                if n > 0:
+                    df.to_csv(out_path, index=False)
+                print(f"{n} events -> {out_path.name}")
+            except requests.RequestException as e:
+                print(f"  {country}: failed - {e}")
+            if i < len(country_names) - 1:
+                time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nInterrupted.")
+        sys.exit(130)
 
     # Sample features for Ukraine
     ukraine_csv = data_dir / "ukraine.csv"
