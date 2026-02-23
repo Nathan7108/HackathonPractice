@@ -3,7 +3,7 @@
 ## Current State
 - [x] S1-01: Project scaffolding
 - [x] S1-02: Fetch ACLED data
-- [ ] S1-03: Fetch GDELT data
+- [x] S1-03: Fetch GDELT data
 - [ ] S1-04: Fetch UCDP data
 - [ ] S1-05: Fetch World Bank data
 - [ ] S1-06: Feature engineering pipeline
