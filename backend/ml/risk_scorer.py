@@ -25,6 +25,12 @@ CLASS_WEIGHTS = {
     "CRITICAL": 100,
 }
 
+from sklearn.preprocessing import LabelEncoder
+
+from backend.ml.pipeline import FEATURE_COLUMNS, MONITORED_COUNTRIES
+
+RISK_LABELS = ["LOW", "MODERATE", "ELEVATED", "HIGH", "CRITICAL"]
+
 
 def score_from_probabilities(probabilities: list, labels: list) -> int:
     """
@@ -114,6 +120,47 @@ def build_training_dataset() -> pd.DataFrame:
 
     for code, info in MONITORED_COUNTRIES.items():
         acled_name = info["acled_name"]
+        safe = acled_name.lower().replace(" ", "_").replace("(", "").replace(")", "").replace("__", "_")
+        ged_candidates = list(data_ucdp.glob(f"*{safe.split('_')[0]}*ged*.csv")) + list(data_ucdp.glob(f"*{acled_name.split()[0].lower()}*ged*.csv"))
+        ged_path = data_ucdp / f"{safe}_ged.csv"
+        if not ged_path.exists() and ged_candidates:
+            ged_path = Path(ged_candidates[0])
+        if ged_path.exists():
+            try:
+                ged_df = pd.read_csv(ged_path)
+                ucdp_by_country[code] = compute_ucdp_features(ged_df, window_years=5)
+                ucdp_ged_paths[code] = ged_path
+            except Exception as e:
+                warnings.warn(f"UCDP {code}: {e}")
+                ucdp_by_country[code] = {k: 0 for k in ["ucdp_total_deaths", "ucdp_state_conflict_years", "ucdp_civilian_deaths", "ucdp_conflict_intensity", "ucdp_recurrence_rate"]}
+        else:
+            ucdp_by_country[code] = {k: 0 for k in ["ucdp_total_deaths", "ucdp_state_conflict_years", "ucdp_civilian_deaths", "ucdp_conflict_intensity", "ucdp_recurrence_rate"]}
+        wb_path = data_wb / f"{iso3}.json"
+        if wb_path.exists():
+            try:
+                with open(wb_path, encoding="utf-8") as f:
+                    wb_by_country[code] = json.load(f).get("features", {})
+            except Exception as e:
+                warnings.warn(f"World Bank {code}: {e}")
+                wb_by_country[code] = {}
+        else:
+            wb_by_country[code] = {}
+
+    wb_feature_keys = [k for k in FEATURE_COLUMNS if k.startswith("wb_") or k == "econ_composite_score"]
+
+    # Country-month rows from ACLED + GDELT + UCDP + WB + sentiment + derived
+    for code, info in MONITORED_COUNTRIES.items():
+        acled_name = info["acled_name"]
+        iso3 = info["iso3"]
+    Build labeled training dataset from ACLED (country-month aggregation).
+    Returns DataFrame with FEATURE_COLUMNS + 'risk_label' + 'country_code'.
+    """
+    root = _repo_root()
+    data_acled = root / "data" / "acled"
+    frames = []
+
+    for code, info in MONITORED_COUNTRIES.items():
+        acled_name = info["acled_name"]
         acled_file = acled_name.lower().replace(" ", "_") + ".csv"
         acled_path = data_acled / acled_file
         if not acled_path.exists():
@@ -134,6 +181,68 @@ def build_training_dataset() -> pd.DataFrame:
         for period, group in acled_df.groupby("year_month"):
             features = _acled_features_from_group(group, window_days=30)
             for col in FEATURE_COLUMNS:
+                if col not in f or f[col] is None:
+                    f[col] = 0.0
+            fatalities = float(pd.to_numeric(group.get("fatalities", pd.Series(0)), errors="coerce").fillna(0).sum())
+            f["risk_label"] = _label_from_fatalities(fatalities)
+            f["country_code"] = code
+            frames.append(f)
+
+    # UCDP historical training rows
+    ac_paths = list(data_ucdp.glob("armed_conflict*.csv")) + list(data_ucdp.glob("UcdpPrio*.csv")) + list(data_ucdp.glob("*acd*.csv"))
+    ac_df = pd.DataFrame()
+    for p in ac_paths:
+        try:
+            ac_df = pd.read_csv(p)
+            if "year" in ac_df.columns and "intensity_level" in ac_df.columns or "intensity" in ac_df.columns:
+                break
+        except Exception:
+            continue
+    if ac_df.empty and (data_ucdp / "armed_conflict_1946_2023.csv").exists():
+        ac_df = pd.read_csv(data_ucdp / "armed_conflict_1946_2023.csv")
+    if not ac_df.empty:
+        ucdp_labels_df = build_ucdp_training_labels(ac_df)
+        gwno_col = "gwno_loc" if "gwno_loc" in ac_df.columns else "gwnoloc" if "gwnoloc" in ac_df.columns else None
+        if gwno_col:
+            merge_df = ac_df[["location", "year", gwno_col]].drop_duplicates(subset=["location", "year"], keep="first")
+            ucdp_labels_df = ucdp_labels_df.merge(merge_df, on=["location", "year"], how="left")
+        loc_to_iso2 = {"Ukraine": "UA", "Taiwan": "TW", "Iran (Government of)": "IR", "Iran": "IR", "Venezuela": "VE", "Pakistan": "PK", "Ethiopia": "ET", "Serbia": "RS", "Brazil": "BR"}
+        for _, row in ucdp_labels_df.iterrows():
+            gwno_val = row.get("gwno_loc", row.get("gwnoloc", None))
+            country_code = None
+            if gwno_val is not None and str(gwno_val).strip() and str(gwno_val) != "nan":
+                try:
+                    gwno_int = int(float(str(gwno_val).split(",")[0].strip()))
+                    country_code = GW_TO_ISO2.get(gwno_int)
+                except (ValueError, TypeError):
+                    pass
+            if country_code is None:
+                loc = str(row.get("location", ""))
+                country_code = loc_to_iso2.get(loc) or (loc_to_iso2.get(loc.split(",")[0].strip()) if "," in loc else None)
+            if country_code not in MONITORED_COUNTRIES:
+                continue
+            ucdp_feat = ucdp_by_country.get(country_code, {k: 0 for k in ["ucdp_total_deaths", "ucdp_state_conflict_years", "ucdp_civilian_deaths", "ucdp_conflict_intensity", "ucdp_recurrence_rate"]})
+            wb_feat = {k: wb_by_country.get(country_code, {}).get(k, 0.0) for k in wb_feature_keys}
+            wb_raw = wb_by_country.get(country_code, {})
+            if wb_raw:
+                from backend.ml.data.fetch_world_bank import format_wb_features
+                wb_feat = {k: format_wb_features(wb_raw).get(k, 0.0) for k in wb_feature_keys}
+            else:
+                wb_feat = {k: 0.0 for k in wb_feature_keys}
+            f = {col: 0.0 for col in FEATURE_COLUMNS}
+            f.update(ucdp_feat)
+            f.update(wb_feat)
+            f.update(_sentiment_random(rng))
+            f.update(_derived_features_train(f))
+            for col in FEATURE_COLUMNS:
+                if col not in f or f[col] is None:
+                    f[col] = 0.0
+            f["risk_label"] = str(row.get("risk_label", "LOW"))
+            f["country_code"] = country_code
+            frames.append(f)
+        for period, group in acled_df.groupby("year_month"):
+            features = _acled_features_from_group(group, window_days=30)
+            for col in FEATURE_COLUMNS:
                 if col not in features:
                     features[col] = 0.0
             fatalities = float(
@@ -148,6 +257,9 @@ def build_training_dataset() -> pd.DataFrame:
 
     df = pd.DataFrame(frames)
     int_cols = {
+        "gdelt_event_count", "acled_battle_count", "acled_civilian_violence", "acled_explosion_count",
+        "acled_protest_count", "acled_event_count_90d", "acled_unique_actors", "acled_geographic_spread",
+        "ucdp_state_conflict_years", "headline_volume",
         "gdelt_event_count",
         "acled_battle_count",
         "acled_civilian_violence",
@@ -188,6 +300,7 @@ def train_risk_scorer(training_df: pd.DataFrame):
     le = LabelEncoder()
     le.fit(RISK_LABELS)
     y = le.transform(df["risk_label"].astype(str))
+    X = df[FEATURE_COLUMNS].fillna(0).astype(float)
     X = df[FEATURE_COLUMNS].fillna(0)
 
     stratify_arg = y if all((y == i).sum() >= 2 for i in range(len(le.classes_))) else None
@@ -200,11 +313,33 @@ def train_risk_scorer(training_df: pd.DataFrame):
             X, y, test_size=0.2, random_state=42
         )
 
+    # Normalize all 47 features to 0-1 so World Bank (large magnitude) doesn't dominate
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+
+    # Upweight HIGH and CRITICAL in loss to improve their recall
+    high_idx = le.transform(["HIGH"])[0]
+    crit_idx = le.transform(["CRITICAL"])[0]
+    sample_weight = np.where(
+        np.isin(y_train, [high_idx, crit_idx]), 2.0, 1.0
+    )
+
+    fit_kw = {"sample_weight": sample_weight}
     fit_kw = {}
     if len(X_test) >= 10:
         fit_kw["eval_set"] = [(X_test, y_test)]
         fit_kw["verbose"] = 50
 
+    model_kw = dict(
+        n_estimators=500,
+        max_depth=6,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.5,
+        reg_alpha=0.1,
+        reg_lambda=1.0,
+        min_child_weight=3,
     model_kw = dict(
         n_estimators=500,
         max_depth=6,
@@ -232,6 +367,10 @@ def train_risk_scorer(training_df: pd.DataFrame):
     encoder_path = models_dir / "risk_label_encoder.pkl"
     joblib.dump(model, model_path)
     joblib.dump(le, encoder_path)
+    joblib.dump(scaler, scaler_path)
+    print(f"\nSaved: {model_path}, {encoder_path}, {scaler_path}")
+    joblib.dump(model, model_path)
+    joblib.dump(le, encoder_path)
     print(f"\nSaved: {model_path}, {encoder_path}")
     return model
 
@@ -241,10 +380,21 @@ def predict_risk(features: dict) -> dict:
     Load trained model and predict risk from a 47-feature dict (e.g. from SentinelFeaturePipeline.compute()).
     Returns dict with risk_level, risk_score (0-100), confidence, probabilities, top_drivers (5 names).
     risk_level is always derived from risk_score thresholds so they never contradict.
+    Applies the same MinMaxScaler used at training. Returns dict with risk_level, risk_score (0-100),
+    confidence, probabilities, top_drivers (5 names).
+    Returns dict with risk_level, risk_score (0-100), confidence, probabilities, top_drivers (5 names).
     """
     root = _repo_root()
     model_path = root / "models" / "risk_scorer.pkl"
     encoder_path = root / "models" / "risk_label_encoder.pkl"
+    if not model_path.exists() or not encoder_path.exists():
+        raise FileNotFoundError("Train the risk scorer first: python -m backend.ml.risk_scorer")
+
+    model = joblib.load(model_path)
+    le = joblib.load(encoder_path)
+
+    X = pd.DataFrame([{col: features.get(col, 0) for col in FEATURE_COLUMNS}]).astype(float)
+    X = scaler.transform(X)
     if not model_path.exists() or not encoder_path.exists():
         raise FileNotFoundError("Train the risk scorer first: python -m backend.ml.risk_scorer")
 
@@ -287,6 +437,10 @@ def predict_risk(features: dict) -> dict:
 if __name__ == "__main__":
     print("Building training dataset from ACLED...")
     training_df = build_training_dataset()
+    print(f"Total training rows: {len(training_df)}")
+    print(f"Dataset shape: {training_df.shape} (47 features + risk_label + country_code)")
+    print("Building training dataset from ACLED...")
+    training_df = build_training_dataset()
     print(f"Dataset shape: {training_df.shape}")
     if training_df.empty:
         print("No training data. Ensure data/acled/*.csv exist for monitored countries.")
@@ -297,6 +451,24 @@ if __name__ == "__main__":
     print("\nTraining XGBoost risk scorer...")
     train_risk_scorer(training_df)
 
+    print("\nTesting predict_risk() with sample features from pipeline...")
+    from backend.ml.pipeline import SentinelFeaturePipeline
+
+    pipeline = SentinelFeaturePipeline("UA", "Ukraine")
+    try:
+        all_features = SentinelFeaturePipeline.compute_all_countries()
+        ua_features = all_features.get("UA")
+        if ua_features is not None:
+            ua_feat = {k: ua_features.get(k, 0) for k in FC}
+            ukraine_result = predict_risk(ua_feat)
+            print("Ukraine prediction:", ukraine_result)
+            if ukraine_result["risk_level"] not in ("HIGH", "CRITICAL"):
+                print("  [Note: Ukraine expected HIGH or CRITICAL; check feature flow from pipeline to scorer.]")
+        else:
+            sample = next(iter(all_features.values())) if all_features else {k: 0.0 for k in FC}
+            print("Ukraine not in results; sample prediction:", predict_risk({k: sample.get(k, 0) for k in FC}))
+    except Exception as e:
+        print("Pipeline/predict_risk error:", e)
     print("\nTesting predict_risk() with sample features from pipeline...")
     from backend.ml.pipeline import SentinelFeaturePipeline
 
