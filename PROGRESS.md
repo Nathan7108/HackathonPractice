@@ -34,3 +34,9 @@
 
 ## Monitored Countries
 UA, TW, IR, VE, PK, ET, RS, BR
+
+## Fixes (Issue #23 — riskScore vs riskLevel mismatch)
+- riskLevel is now always derived from riskScore via thresholds (0–20 LOW, 21–40 MODERATE, 41–60 ELEVATED, 61–80 HIGH, 81–100 CRITICAL).
+- riskScore uses weighted probability across all 5 classes (CLASS_WEIGHTS), so score and label never contradict.
+- main.py re-derives risk_level after anomaly boost so level stays consistent.
+- Branch: feature/fix-risk-score-level-mismatch. PR: create manually with body "Closes #23" if gh not installed.
