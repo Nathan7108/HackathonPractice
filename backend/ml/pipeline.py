@@ -145,10 +145,10 @@ class SentinelFeaturePipeline:
         Merge all data source features into one dict with exactly 47 feature keys.
         Replaces None with 0/0.0. Includes country_code and computed_at.
         """
-        # GDELT (10)
-        gdelt_features = compute_gdelt_features(gdelt_df, window_days=30)
-        # ACLED (10)
-        acled_features = compute_acled_features(acled_df, window_days=30)
+        # GDELT (10) — 90 days captures recent trends and acceleration
+        gdelt_features = compute_gdelt_features(gdelt_df, window_days=90)
+        # ACLED (10) — full history for full conflict picture
+        acled_features = compute_acled_features(acled_df, window_days=99999)
         # UCDP (5)
         ucdp_features = compute_ucdp_features(ucdp_df, window_years=5)
         # World Bank (10) — already wb_-prefixed from fetch_world_bank_features

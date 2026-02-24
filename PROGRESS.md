@@ -10,8 +10,8 @@
 - [x] S2-01: Anomaly detector (Isolation Forest)
 - [x] S2-02: Risk scorer (XGBoost)
 - [x] S2-03: Sentiment analyzer (FinBERT)
-- [ ] S2-04: Risk forecaster (LSTM)
-- [ ] S3-01: FastAPI integration
+- [x] S2-04: Risk forecaster (LSTM)
+- [x] S3-01: FastAPI integration
 
 ## Environment
 - Python 3.11 (conda env: sentinel)
@@ -30,7 +30,7 @@
 - Anomaly Detector: Ready (train via `python -m backend.ml.anomaly` when GDELT data present)
 - Risk Scorer (XGBoost): Ready (train via `python -m backend.ml.risk_scorer`; test accuracy ~100%, top 3: acled_fatality_rate, acled_fatalities_30d, acled_geographic_spread; training set 496 country-months)
 - Sentiment (FinBERT): PRE-TRAINED (download only)
-- Forecaster (LSTM): NOT TRAINED
+- Forecaster (LSTM): Ready (train via `python -m backend.ml.forecaster`; saves models/forecaster.pt; forecast_risk() returns 30/60/90 day predictions + trend)
 
 ## Monitored Countries
 UA, TW, IR, VE, PK, ET, RS, BR
