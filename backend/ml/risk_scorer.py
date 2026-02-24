@@ -137,6 +137,13 @@ def _load_country_auxiliary_features(root: Path, code: str, info: dict) -> dict:
     # UCDP: data/ucdp/{acled_name}_ged.csv (same sanitization as split_ucdp_global)
     acled_name = info["acled_name"]
     ucdp_path = root / "data" / "ucdp" / f"{_safe_acled_name(acled_name)}_ged.csv"
+    if not ucdp_path.exists():
+        ucdp_dir = root / "data" / "ucdp"
+        first_word = acled_name.split()[0].lower()
+        if first_word and len(first_word) > 1:
+            candidates = list(ucdp_dir.glob(f"*{first_word}*_ged.csv"))
+            if candidates:
+                ucdp_path = candidates[0]
     if ucdp_path.exists():
         try:
             ucdp_df = pd.read_csv(ucdp_path)
