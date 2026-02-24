@@ -109,6 +109,8 @@ def compute_acled_features(df: pd.DataFrame, window_days: int = 30) -> dict:
     acled_civilian_violence, acled_explosion_count, acled_protest_count,
     acled_fatality_rate, acled_event_count_90d, acled_event_acceleration,
     acled_unique_actors, acled_geographic_spread.
+    When window_days >= 99999, uses the ENTIRE dataframe for the full conflict picture;
+    acled_event_acceleration still uses the last 90 days of the dataset (last 30d vs prior 60d).
     """
     if df is None or df.empty:
         return {
@@ -127,17 +129,54 @@ def compute_acled_features(df: pd.DataFrame, window_days: int = 30) -> dict:
     df = df.copy()
     df["event_date"] = pd.to_datetime(df["event_date"], errors="coerce")
     df = df.dropna(subset=["event_date"])
-    now = pd.Timestamp.now()
-    recent = df[df["event_date"] > now - pd.Timedelta(days=window_days)]
-    recent_90 = df[df["event_date"] > now - pd.Timedelta(days=90)]
+    if df.empty:
+        return {
+            "acled_fatalities_30d": 0.0,
+            "acled_battle_count": 0,
+            "acled_civilian_violence": 0,
+            "acled_explosion_count": 0,
+            "acled_protest_count": 0,
+            "acled_fatality_rate": 0.0,
+            "acled_event_count_90d": 0,
+            "acled_event_acceleration": 0.0,
+            "acled_unique_actors": 0,
+            "acled_geographic_spread": 0,
+        }
+
+    use_full_history = window_days >= 99999
+    ref_date = df["event_date"].max()
+
+    if use_full_history:
+        recent = df
+        recent_90 = df[df["event_date"] > ref_date - pd.Timedelta(days=90)]
+        recent_30 = df[df["event_date"] > ref_date - pd.Timedelta(days=30)]
+        older_60_90 = df[
+            (df["event_date"] > ref_date - pd.Timedelta(days=90))
+            & (df["event_date"] <= ref_date - pd.Timedelta(days=30))
+        ]
+        count_90 = len(recent_90)
+        count_30 = len(recent_30)
+        count_60_90 = len(older_60_90)
+        days_span = max((ref_date - df["event_date"].min()).days, 1)
+    else:
+        recent = df[df["event_date"] > ref_date - pd.Timedelta(days=window_days)]
+        recent_90 = df[df["event_date"] > ref_date - pd.Timedelta(days=90)]
+        recent_30 = df[df["event_date"] > ref_date - pd.Timedelta(days=30)]
+        older_60_90 = df[
+            (df["event_date"] > ref_date - pd.Timedelta(days=90))
+            & (df["event_date"] <= ref_date - pd.Timedelta(days=30))
+        ]
+        count_90 = len(recent_90)
+        count_30 = len(recent_30)
+        count_60_90 = len(older_60_90)
+        days_span = max(window_days, 1)
 
     fatalities = pd.to_numeric(recent["fatalities"], errors="coerce").fillna(0)
-    count_90 = len(recent_90)
-    count_30 = len(recent)
-    older_60_90 = max(count_90 - count_30, 1)
+    total_fatal = float(fatalities.sum())
+    older_60_90_count = max(count_60_90, 1)
 
     return {
-        "acled_fatalities_30d": float(fatalities.sum()),
+        "acled_fatalities_30d": total_fatal,
         "acled_battle_count": int(len(recent[recent["event_type"] == "Battles"])),
         "acled_civilian_violence": int(
             len(recent[recent["event_type"] == "Violence against civilians"])
@@ -152,9 +191,9 @@ def compute_acled_features(df: pd.DataFrame, window_days: int = 30) -> dict:
                 ]
             )
         ),
-        "acled_fatality_rate": float(fatalities.sum() / max(window_days, 1)),
+        "acled_fatality_rate": float(total_fatal / days_span),
         "acled_event_count_90d": count_90,
-        "acled_event_acceleration": float(count_30 / older_60_90),
+        "acled_event_acceleration": float(count_30 / older_60_90_count),
         "acled_unique_actors": int(recent["actor1"].nunique()) if "actor1" in recent.columns else 0,
         "acled_geographic_spread": int(recent["admin1"].nunique()) if "admin1" in recent.columns else 0,
     }

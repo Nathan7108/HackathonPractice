@@ -9,8 +9,13 @@ from urllib.request import urlopen, Request
 import pandas as pd
 from tqdm import tqdm
 
-# Monitored countries (ISO2 codes GDELT uses)
+# Monitored countries: we use ISO2 in filenames/APIs; GDELT export uses ISO3 in Actor columns
 COUNTRIES = ["UA", "TW", "IR", "VE", "PK", "ET", "RS", "BR"]
+# ISO2 -> ISO3 for GDELT Actor1CountryCode / Actor2CountryCode (GDELT uses 3-letter)
+ISO2_TO_ISO3 = {
+    "UA": "UKR", "TW": "TWN", "IR": "IRN", "VE": "VEN", "PK": "PAK",
+    "ET": "ETH", "RS": "SRB", "BR": "BRA",
+}
 
 # GDELT v2 export: 61 columns, tab-separated, no header. We only load these (0-based indices).
 GDELT_COL_INDICES = [1, 7, 17, 26, 30, 31, 34]
@@ -91,10 +96,11 @@ def _read_zip_csv(zip_path: Path, country_code: str) -> pd.DataFrame | None:
                     on_bad_lines="skip",
                     low_memory=False,
                 )
-        # Country codes may be NaN
-        a1 = df["Actor1CountryCode"].fillna("")
-        a2 = df["Actor2CountryCode"].fillna("")
-        mask = (a1.str.upper() == country_code.upper()) | (a2.str.upper() == country_code.upper())
+        # GDELT uses 3-letter ISO codes; filter by ISO3 for this country
+        iso3 = ISO2_TO_ISO3.get(country_code.upper(), country_code.upper())
+        a1 = df["Actor1CountryCode"].fillna("").str.strip().str.upper()
+        a2 = df["Actor2CountryCode"].fillna("").str.strip().str.upper()
+        mask = (a1 == iso3) | (a2 == iso3)
         return df.loc[mask].copy()
     except Exception as e:
         print(f"  Warning: skip {zip_path.name}: {e}")
@@ -155,9 +161,10 @@ def compute_gdelt_features(df: pd.DataFrame, window_days: int = 30) -> dict:
     df = df.copy()
     df["date"] = pd.to_datetime(df["SQLDATE"].astype(str), format="%Y%m%d", errors="coerce")
     df = df.dropna(subset=["date"])
-    now = pd.Timestamp.now()
-    recent = df[df["date"] > now - pd.Timedelta(days=window_days)]
-    recent_90 = df[df["date"] > now - pd.Timedelta(days=90)]
+    # Use max date in dataset so stale data still produces correct features
+    ref_date = df["date"].max()
+    recent = df[df["date"] > ref_date - pd.Timedelta(days=window_days)]
+    recent_90 = df[df["date"] > ref_date - pd.Timedelta(days=90)]
 
     def sm(s):
         return float(s.mean()) if len(s) > 0 else 0.0
@@ -198,8 +205,7 @@ if __name__ == "__main__":
             df = fetch_gdelt_country(country_code, days_back=days_back)
             n = len(df)
             out_path = data_dir / f"{country_code}_events.csv"
-            if n > 0:
-                df.to_csv(out_path, index=False)
+            df.to_csv(out_path, index=False)  # always write (empty = zero-filled features for pipeline)
             print(f"  {country_code}: {n} events -> {out_path.name}")
         except Exception as e:
             print(f"  {country_code}: failed - {e}")
