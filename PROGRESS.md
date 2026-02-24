@@ -6,7 +6,7 @@
 - [x] S1-03: Fetch GDELT data
 - [x] S1-04: Fetch UCDP data
 - [x] S1-05: Fetch World Bank data
-- [ ] S1-06: Feature engineering pipeline
+- [x] S1-06: Feature engineering pipeline
 - [ ] S2-01: Anomaly detector (Isolation Forest)
 - [ ] S2-02: Risk scorer (XGBoost)
 - [ ] S2-03: Sentiment analyzer (FinBERT)
