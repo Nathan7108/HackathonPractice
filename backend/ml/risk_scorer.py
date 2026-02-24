@@ -25,6 +25,12 @@ GW_TO_ISO2 = {
     770: "PK", 530: "ET", 345: "RS", 140: "BR",
 }
 
+from sklearn.preprocessing import LabelEncoder
+
+from backend.ml.pipeline import FEATURE_COLUMNS, MONITORED_COUNTRIES
+
+RISK_LABELS = ["LOW", "MODERATE", "ELEVATED", "HIGH", "CRITICAL"]
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
@@ -238,6 +244,15 @@ def build_training_dataset() -> pd.DataFrame:
     for code, info in MONITORED_COUNTRIES.items():
         acled_name = info["acled_name"]
         iso3 = info["iso3"]
+    Build labeled training dataset from ACLED (country-month aggregation).
+    Returns DataFrame with FEATURE_COLUMNS + 'risk_label' + 'country_code'.
+    """
+    root = _repo_root()
+    data_acled = root / "data" / "acled"
+    frames = []
+
+    for code, info in MONITORED_COUNTRIES.items():
+        acled_name = info["acled_name"]
         acled_file = acled_name.lower().replace(" ", "_") + ".csv"
         acled_path = data_acled / acled_file
         if not acled_path.exists():
@@ -350,6 +365,17 @@ def build_training_dataset() -> pd.DataFrame:
             f["risk_label"] = str(row.get("risk_label", "LOW"))
             f["country_code"] = country_code
             frames.append(f)
+        for period, group in acled_df.groupby("year_month"):
+            features = _acled_features_from_group(group, window_days=30)
+            for col in FEATURE_COLUMNS:
+                if col not in features:
+                    features[col] = 0.0
+            fatalities = float(
+                pd.to_numeric(group.get("fatalities", pd.Series(0)), errors="coerce").fillna(0).sum()
+            )
+            features["risk_label"] = _label_from_fatalities(fatalities)
+            features["country_code"] = code
+            frames.append(features)
 
     if not frames:
         return pd.DataFrame(columns=FEATURE_COLUMNS + ["risk_label", "country_code"])
@@ -359,6 +385,16 @@ def build_training_dataset() -> pd.DataFrame:
         "gdelt_event_count", "acled_battle_count", "acled_civilian_violence", "acled_explosion_count",
         "acled_protest_count", "acled_event_count_90d", "acled_unique_actors", "acled_geographic_spread",
         "ucdp_state_conflict_years", "headline_volume",
+        "gdelt_event_count",
+        "acled_battle_count",
+        "acled_civilian_violence",
+        "acled_explosion_count",
+        "acled_protest_count",
+        "acled_event_count_90d",
+        "acled_unique_actors",
+        "acled_geographic_spread",
+        "ucdp_state_conflict_years",
+        "headline_volume",
     }
     for c in int_cols:
         if c in df.columns:
@@ -408,6 +444,7 @@ def train_risk_scorer(training_df: pd.DataFrame):
     le.fit(RISK_LABELS)
     y = le.transform(df["risk_label"].astype(str))
     X = df[FEATURE_COLUMNS].fillna(0).astype(float)
+    X = df[FEATURE_COLUMNS].fillna(0)
 
     stratify_arg = y if all((y == i).sum() >= 2 for i in range(len(le.classes_))) else None
     try:
@@ -432,6 +469,7 @@ def train_risk_scorer(training_df: pd.DataFrame):
     )
 
     fit_kw = {"sample_weight": sample_weight}
+    fit_kw = {}
     if len(X_test) >= 10:
         fit_kw["eval_set"] = [(X_test, y_test)]
         fit_kw["verbose"] = 50
@@ -446,6 +484,12 @@ def train_risk_scorer(training_df: pd.DataFrame):
         reg_alpha=0.1,
         reg_lambda=1.0,
         min_child_weight=3,
+    model_kw = dict(
+        n_estimators=500,
+        max_depth=6,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
         eval_metric="mlogloss",
         random_state=42,
     )
@@ -470,6 +514,9 @@ def train_risk_scorer(training_df: pd.DataFrame):
     joblib.dump(le, encoder_path)
     joblib.dump(scaler, scaler_path)
     print(f"\nSaved: {model_path}, {encoder_path}, {scaler_path}")
+    joblib.dump(model, model_path)
+    joblib.dump(le, encoder_path)
+    print(f"\nSaved: {model_path}, {encoder_path}")
     return model
 
 
@@ -478,6 +525,7 @@ def predict_risk(features: dict) -> dict:
     Load trained model and predict risk from a 47-feature dict (e.g. from SentinelFeaturePipeline.compute()).
     Applies the same MinMaxScaler used at training. Returns dict with risk_level, risk_score (0-100),
     confidence, probabilities, top_drivers (5 names).
+    Returns dict with risk_level, risk_score (0-100), confidence, probabilities, top_drivers (5 names).
     """
     root = _repo_root()
     model_path = root / "models" / "risk_scorer.pkl"
@@ -494,6 +542,13 @@ def predict_risk(features: dict) -> dict:
 
     X = pd.DataFrame([{col: features.get(col, 0) for col in FEATURE_COLUMNS}]).astype(float)
     X = scaler.transform(X)
+    if not model_path.exists() or not encoder_path.exists():
+        raise FileNotFoundError("Train the risk scorer first: python -m backend.ml.risk_scorer")
+
+    model = joblib.load(model_path)
+    le = joblib.load(encoder_path)
+
+    X = pd.DataFrame([{col: features.get(col, 0) for col in FEATURE_COLUMNS}])
     probabilities = model.predict_proba(X)[0]
     predicted_class = model.predict(X)[0]
     risk_level = le.inverse_transform([predicted_class])[0]
@@ -524,6 +579,9 @@ if __name__ == "__main__":
     training_df = build_training_dataset()
     print(f"Total training rows: {len(training_df)}")
     print(f"Dataset shape: {training_df.shape} (47 features + risk_label + country_code)")
+    print("Building training dataset from ACLED...")
+    training_df = build_training_dataset()
+    print(f"Dataset shape: {training_df.shape}")
     if training_df.empty:
         print("No training data. Ensure data/acled/*.csv exist for monitored countries.")
         raise SystemExit(1)
@@ -550,3 +608,14 @@ if __name__ == "__main__":
             print("Ukraine not in results; sample prediction:", predict_risk({k: sample.get(k, 0) for k in FC}))
     except Exception as e:
         print("Pipeline/predict_risk error:", e)
+    print("\nTesting predict_risk() with sample features from pipeline...")
+    from backend.ml.pipeline import SentinelFeaturePipeline
+
+    pipeline = SentinelFeaturePipeline("UA", "Ukraine")
+    try:
+        all_features = SentinelFeaturePipeline.compute_all_countries()
+        sample = all_features.get("UA") or next(iter(all_features.values()))
+    except Exception:
+        sample = {k: 0.0 for k in FEATURE_COLUMNS}
+    result = predict_risk(sample)
+    print("Sample prediction:", result)
