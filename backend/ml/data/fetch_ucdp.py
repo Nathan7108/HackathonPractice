@@ -50,6 +50,36 @@ def _data_dir() -> Path:
     return d
 
 
+def split_ucdp_global() -> None:
+    """Split UCDP GED master CSV into per-country files. Uses largest *ged*.csv in data/ucdp/ as master."""
+    ucdp_dir = _data_dir()
+    ged_files = list(ucdp_dir.glob("*ged*.csv")) + list(ucdp_dir.glob("*GED*.csv"))
+    if not ged_files:
+        print("No UCDP GED master file found in data/ucdp/")
+        return
+    master_path = max(ged_files, key=lambda p: p.stat().st_size)
+    print(f"Splitting {master_path.name}...")
+    df = pd.read_csv(master_path, low_memory=False)
+    country_col = "country" if "country" in df.columns else "country_name"
+    if country_col not in df.columns:
+        print(f"  No column 'country' or 'country_name' in {master_path.name}")
+        return
+    for country, group in df.groupby(country_col):
+        safe = (
+            str(country)
+            .lower()
+            .replace(" ", "_")
+            .replace("(", "")
+            .replace(")", "")
+            .replace("'", "")
+            .replace("-", "_")
+            .replace("__", "_")
+        )
+        out_path = ucdp_dir / f"{safe}_ged.csv"
+        group.to_csv(out_path, index=False)
+    print(f"Split into {df[country_col].nunique()} country files")
+
+
 def fetch_ucdp_ged(country_name: str) -> pd.DataFrame:
     """
     Fetch UCDP GED (Georeferenced Event Dataset) for one country via REST API.

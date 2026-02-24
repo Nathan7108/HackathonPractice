@@ -240,6 +240,7 @@ def predict_risk(features: dict) -> dict:
     """
     Load trained model and predict risk from a 47-feature dict (e.g. from SentinelFeaturePipeline.compute()).
     Returns dict with risk_level, risk_score (0-100), confidence, probabilities, top_drivers (5 names).
+<<<<<<< HEAD
     risk_level is always derived from risk_score thresholds so they never contradict.
     """
     root = _repo_root()

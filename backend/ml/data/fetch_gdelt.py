@@ -2,7 +2,9 @@
 # GDELT v2: masterfilelist.txt, .export.CSV.zip files, tab-separated no header.
 
 import io
+import json
 import zipfile
+from collections import defaultdict
 from pathlib import Path
 from urllib.request import urlopen, Request
 
@@ -134,6 +136,87 @@ def fetch_gdelt_country(country_code: str, days_back: int = 365) -> pd.DataFrame
     for col in ["GoldsteinScale", "NumMentions", "AvgTone"]:
         out[col] = pd.to_numeric(out[col], errors="coerce")
     return out
+
+
+def _load_iso3_to_iso2() -> dict[str, str]:
+    """Load countries.json and build ISO3 -> ISO2 for GDELT partition filenames."""
+    root = Path(__file__).resolve().parents[3]
+    path = root / "data" / "countries.json"
+    if not path.exists():
+        return {v: k for k, v in ISO2_TO_ISO3.items()}  # fallback: iso3 -> iso2
+    with open(path, encoding="utf-8") as f:
+        entries = json.load(f)
+    return {e["iso3"]: e["iso2"] for e in entries if e.get("iso3") and e.get("iso2")}
+
+
+def fetch_gdelt_all_countries(days_back: int = 3650) -> None:
+    """
+    Download GDELT v2 zips in chunks, extract events for ALL countries in single pass per chunk.
+    days_back=3650 ≈ 10 years (full GDELT v2 history from 2015).
+    Processes zips in chunks and uses append mode for CSVs to avoid memory issues.
+    Writes data/gdelt/{ISO2}_events.csv using ISO2 from countries.json (GDELT uses ISO3 in Actor columns).
+    """
+    iso3_to_iso2 = _load_iso3_to_iso2()
+    urls = _get_export_urls(days_back)
+    data_dir = _data_dir()
+    CHUNK_SIZE = 500
+
+    # Track which country files we've already written (so first write has header, rest append)
+    written_iso2 = set()
+
+    for chunk_start in range(0, len(urls), CHUNK_SIZE):
+        chunk_urls = urls[chunk_start : chunk_start + CHUNK_SIZE]
+        country_frames = defaultdict(list)
+
+        for url in tqdm(chunk_urls, desc=f"GDELT chunk {chunk_start // CHUNK_SIZE + 1}"):
+            path = _download_or_get_cached(url)
+            if path is None:
+                continue
+            try:
+                with zipfile.ZipFile(path, "r") as z:
+                    names = z.namelist()
+                    if not names:
+                        continue
+                    with z.open(names[0]) as f:
+                        df = pd.read_csv(
+                            io.BytesIO(f.read()),
+                            sep="\t",
+                            header=None,
+                            usecols=GDELT_COL_INDICES,
+                            names=GDELT_COL_NAMES,
+                            dtype=str,
+                            on_bad_lines="skip",
+                            low_memory=False,
+                        )
+                a1 = df["Actor1CountryCode"].fillna("").str.strip().str.upper()
+                a2 = df["Actor2CountryCode"].fillna("").str.strip().str.upper()
+                all_codes_iso3 = set(a1.unique()) | set(a2.unique())
+                all_codes_iso3.discard("")
+
+                for iso3 in all_codes_iso3:
+                    iso2 = iso3_to_iso2.get(iso3)
+                    if iso2 is None:
+                        continue
+                    mask = (a1 == iso3) | (a2 == iso3)
+                    country_frames[iso2].append(df.loc[mask].copy())
+            except Exception:
+                continue
+
+        for iso2, frames in country_frames.items():
+            merged = pd.concat(frames, ignore_index=True)
+            for col in ["GoldsteinScale", "NumMentions", "AvgTone"]:
+                merged[col] = pd.to_numeric(merged[col], errors="coerce")
+            out_path = data_dir / f"{iso2}_events.csv"
+            if iso2 in written_iso2:
+                merged.to_csv(out_path, mode="a", header=False, index=False)
+            else:
+                merged.to_csv(out_path, index=False)
+                written_iso2.add(iso2)
+
+        print(f"  Chunk {chunk_start // CHUNK_SIZE + 1}: {len(country_frames)} countries")
+
+    csvs = list(data_dir.glob("*_events.csv"))
+    print(f"GDELT complete: {len(csvs)} country files")
 
 
 def compute_gdelt_features(df: pd.DataFrame, window_days: int = 30) -> dict:

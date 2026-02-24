@@ -1,9 +1,11 @@
 # Sentinel AI — fetch World Bank economic indicators (S1-05)
-# Fetches 6 indicators × last 5 years via wbgapi (or requests fallback); returns 10 ML-ready features per country.
+# Fetches 6 indicators × last N years via wbgapi (or requests fallback); returns 10 ML-ready features per country.
 
 import json
 from pathlib import Path
 from typing import Any
+
+from tqdm import tqdm
 
 try:
     import wbgapi
@@ -44,11 +46,11 @@ def _data_dir() -> Path:
     return d
 
 
-def _fetch_indicator_via_api(indicator_code: str, country_iso3: str) -> list[float]:
-    """Fetch up to 5 most recent values from World Bank API v2 (requests fallback)."""
+def _fetch_indicator_via_api(indicator_code: str, country_iso3: str, mrv: int = 5) -> list[float]:
+    """Fetch up to mrv most recent values from World Bank API v2 (requests fallback)."""
     url = (
         "https://api.worldbank.org/v2/country/"
-        f"{country_iso3}/indicator/{indicator_code}?format=json&per_page=5"
+        f"{country_iso3}/indicator/{indicator_code}?format=json&per_page={mrv}"
     )
     try:
         r = requests.get(url, timeout=15)
@@ -61,14 +63,14 @@ def _fetch_indicator_via_api(indicator_code: str, country_iso3: str) -> list[flo
         # collect (date, value) and sort by date desc so values[0] = latest
         dated = [(row.get("date"), float(row["value"])) for row in rows if row.get("value") is not None]
         dated.sort(key=lambda x: x[0], reverse=True)
-        return [v for _, v in dated[:5]]
+        return [v for _, v in dated[:mrv]]
     except Exception:
         return []
 
 
-def _fetch_raw_world_bank(country_iso3: str) -> dict[str, Any]:
+def _fetch_raw_world_bank(country_iso3: str, mrv: int = 5) -> dict[str, Any]:
     """
-    Fetches last 5 years of World Bank indicators for one country (internal).
+    Fetches last mrv years of World Bank indicators for one country (internal).
     Returns raw features dict: *_latest and *_trend per indicator.
     Handles missing data and Taiwan (TWN) gracefully; per-indicator try/except.
     Uses wbgapi if available, else requests to api.worldbank.org/v2.
@@ -79,12 +81,12 @@ def _fetch_raw_world_bank(country_iso3: str) -> dict[str, Any]:
             values = []
             if _HAS_WBGAPI:
                 try:
-                    data = list(wbgapi.data.get(code, country_iso3, mrv=5))
+                    data = list(wbgapi.data.get(code, country_iso3, mrv=mrv))
                     values = [v["value"] for v in data if v.get("value") is not None]
                 except Exception:
                     pass
             if not values:
-                values = _fetch_indicator_via_api(code, country_iso3)
+                values = _fetch_indicator_via_api(code, country_iso3, mrv=mrv)
             if values:
                 features[f"{name}_latest"] = values[0]
                 features[f"{name}_trend"] = values[0] - values[-1]
@@ -97,15 +99,40 @@ def _fetch_raw_world_bank(country_iso3: str) -> dict[str, Any]:
     return features
 
 
-def fetch_world_bank_features(country_iso3: str) -> dict[str, Any]:
+def fetch_world_bank_features(country_iso3: str, mrv: int = 5) -> dict[str, Any]:
     """
     Fetches World Bank indicators and returns 10 ML-ready features per country.
+    mrv: most recent N years of data (default 5).
     Keys: wb_gdp_growth_latest, wb_gdp_growth_trend, wb_inflation_latest,
     wb_inflation_trend, wb_unemployment_latest, wb_debt_pct_gdp, wb_fdi_latest,
     wb_fdi_trend, wb_military_spend, econ_composite_score.
     """
-    raw = _fetch_raw_world_bank(country_iso3)
+    raw = _fetch_raw_world_bank(country_iso3, mrv=mrv)
     return format_wb_features(raw)
+
+
+def fetch_world_bank_all_countries(mrv: int = 30) -> None:
+    """Fetch World Bank indicators for all countries in data/countries.json. Saves data/world_bank/{ISO3}.json."""
+    root = Path(__file__).resolve().parents[3]
+    countries_path = root / "data" / "countries.json"
+    if not countries_path.exists():
+        raise FileNotFoundError("data/countries.json not found; run --step countries first")
+    with open(countries_path, encoding="utf-8") as f:
+        countries = json.load(f)
+    wb_dir = _data_dir()
+    for entry in tqdm(countries, desc="World Bank"):
+        iso3 = entry.get("iso3")
+        if not iso3:
+            continue
+        out_path = wb_dir / f"{iso3}.json"
+        if out_path.exists():
+            continue
+        try:
+            features = fetch_world_bank_features(iso3, mrv=mrv)
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump({"iso3": iso3, "features": features}, f, indent=2)
+        except Exception as e:
+            print(f"  {iso3}: {e}")
 
 
 def compute_econ_composite(wb_features: dict[str, Any]) -> float:

@@ -1,6 +1,7 @@
 # Sentinel AI — fetch ACLED conflict data (S1-02)
 # New ACLED API: OAuth at acleddata.com, Bearer token, pagination 5000/page.
 
+import json
 import os
 import time
 from pathlib import Path
@@ -8,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 from dotenv import load_dotenv
+from tqdm import tqdm
 
 # ISO2 -> full country name (ACLED uses full names)
 COUNTRIES = {
@@ -206,6 +208,36 @@ def _data_dir() -> Path:
     d = root / "data" / "acled"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def fetch_acled_all_countries(
+    token: str,
+    start_date: str = "1997-01-01",
+    end_date: str = "2026-12-31",
+) -> None:
+    """Fetch ACLED for every country in data/countries.json. Skips already-fetched files. 0.5s delay between requests."""
+    root = Path(__file__).resolve().parents[3]
+    countries_path = root / "data" / "countries.json"
+    if not countries_path.exists():
+        raise FileNotFoundError("data/countries.json not found; run --step countries first")
+    with open(countries_path, encoding="utf-8") as f:
+        countries = json.load(f)
+    data_dir = _data_dir()
+
+    for entry in tqdm(countries, desc="ACLED"):
+        acled_name = entry.get("acled_name") or entry.get("name", "")
+        safe = acled_name.lower().replace(" ", "_").replace("(", "").replace(")", "").replace("'", "").replace("-", "_").replace("__", "_")
+        out_path = data_dir / f"{safe}.csv"
+        if out_path.exists() and out_path.stat().st_size > 100:
+            continue
+        try:
+            df = fetch_acled(acled_name, token, start_date=start_date, end_date=end_date)
+            if len(df) > 0:
+                df.to_csv(out_path, index=False)
+                print(f"  {acled_name}: {len(df)} events")
+            time.sleep(0.5)
+        except Exception as e:
+            print(f"  {acled_name}: {e}")
 
 
 if __name__ == "__main__":

@@ -19,12 +19,35 @@ ANOMALY_FEATURES = [
     "event_count",
 ]
 
+# Fallback list when no GDELT CSVs exist; normally train_all_anomaly_detectors iterates data/gdelt/*_events.csv
 COUNTRIES = ["UA", "TW", "IR", "VE", "PK", "ET", "RS", "BR"]
+MIN_WEEKS_FOR_TRAINING = 5
+
+# GDELT CSV columns (must match fetch_gdelt.py output)
+REQUIRED_GDELT_COLUMNS = [
+    "SQLDATE",
+    "GoldsteinScale",
+    "NumMentions",
+    "AvgTone",
+    "EventCode",
+]
 
 
 def _repo_root() -> Path:
-    """Repo root (HackathonPractice)."""
-    return Path(__file__).resolve().parents[2]
+    """Repo root: directory that contains data/gdelt/ (works from any cwd)."""
+    this_file = Path(__file__).resolve()
+    # Try __file__-based: backend/ml/anomaly.py -> parents[2] = repo root
+    for level in [2, 3]:
+        if level < len(this_file.parents):
+            candidate = this_file.parents[level]
+            if (candidate / "data" / "gdelt").exists():
+                return candidate
+    # Fallback: walk up from cwd to find data/gdelt
+    cwd = Path.cwd()
+    for parent in [cwd, *cwd.parents]:
+        if (parent / "data" / "gdelt").exists():
+            return parent
+    return this_file.parents[1]  # last resort: backend/ parent
 
 
 def _models_dir() -> Path:
@@ -35,8 +58,26 @@ def _models_dir() -> Path:
 
 
 def _gdelt_path(country_code: str) -> Path:
-    """Path to data/gdelt/{CC}_events.csv."""
+    """Path to data/gdelt/{CC}_events.csv (same filenames as fetch_gdelt.py)."""
     return _repo_root() / "data" / "gdelt" / f"{country_code}_events.csv"
+
+
+def _load_gdelt_csv(path: Path) -> pd.DataFrame | None:
+    """
+    Load GDELT CSV and verify required columns. Normalize column names (strip).
+    Returns None if file missing, empty, or columns invalid.
+    """
+    if not path.exists():
+        return None
+    if path.stat().st_size <= 90:
+        return None  # header-only or empty
+    df = pd.read_csv(path)
+    df.columns = df.columns.str.strip()
+    missing = [c for c in REQUIRED_GDELT_COLUMNS if c not in df.columns]
+    if missing:
+        print(f"  Warning: {path.name} missing columns: {missing}")
+        return None
+    return df
 
 
 def train_anomaly_detector(country_code: str, gdelt_df: pd.DataFrame):
@@ -46,9 +87,9 @@ def train_anomaly_detector(country_code: str, gdelt_df: pd.DataFrame):
     Saves models/anomaly_{CC}.pkl and models/scaler_{CC}.pkl.
     """
     df = gdelt_df.copy()
-    df["date"] = pd.to_datetime(
-        df["SQLDATE"].astype(str), format="%Y%m%d", errors="coerce"
-    )
+    # SQLDATE may be int (20260125) or float (20260125.0); normalize to YYYYMMDD string
+    sqldate = df["SQLDATE"].astype(str).str.replace(r"\.0$", "", regex=True)
+    df["date"] = pd.to_datetime(sqldate, format="%Y%m%d", errors="coerce")
     df = df.dropna(subset=["date"])
     for col in ["GoldsteinScale", "NumMentions", "AvgTone"]:
         if col in df.columns:
@@ -95,17 +136,30 @@ def train_anomaly_detector(country_code: str, gdelt_df: pd.DataFrame):
 
 
 def train_all_anomaly_detectors() -> None:
-    """Train Isolation Forest + scaler for all 8 countries. Saves to models/."""
-    for country_code in COUNTRIES:
-        path = _gdelt_path(country_code)
-        if not path.exists():
-            print(f"  Warning: no GDELT CSV for {country_code}, skipping")
-            continue
+    """Train Isolation Forest + scaler for every country with >= MIN_WEEKS_FOR_TRAINING weeks of GDELT data. Saves to models/."""
+    gdelt_dir = _repo_root() / "data" / "gdelt"
+    if not gdelt_dir.exists():
+        print(f"  Warning: data/gdelt not found at {gdelt_dir}")
+        return
+    count = 0
+    for csv_path in sorted(gdelt_dir.glob("*_events.csv")):
+        country_code = csv_path.stem.replace("_events", "")
         try:
-            df = pd.read_csv(path)
+            df = _load_gdelt_csv(csv_path)
+            if df is None or len(df) == 0:
+                continue
+            df = df.copy()
+            sqldate = df["SQLDATE"].astype(str).str.replace(r"\.0$", "", regex=True)
+            df["date"] = pd.to_datetime(sqldate, format="%Y%m%d", errors="coerce")
+            df = df.dropna(subset=["date"])
+            weeks = df["date"].dt.to_period("W").nunique()
+            if weeks < MIN_WEEKS_FOR_TRAINING:
+                continue
             train_anomaly_detector(country_code, df)
+            count += 1
         except Exception as e:
             print(f"  Warning: {country_code} failed - {e}")
+    print(f"Trained anomaly detectors for {count} countries")
 
 
 def detect_anomaly(country_code: str, current_features: dict) -> dict:
@@ -164,8 +218,8 @@ if __name__ == "__main__":
 
     test_country = "UA"
     gdelt_path = _gdelt_path(test_country)
-    if gdelt_path.exists():
-        df_ua = pd.read_csv(gdelt_path)
+    df_ua = _load_gdelt_csv(gdelt_path) if gdelt_path.exists() else None
+    if df_ua is not None and len(df_ua) > 0:
         features_30d = compute_gdelt_features(df_ua, window_days=30)
         current = {
             "goldstein_mean": features_30d.get("gdelt_goldstein_mean", 0),

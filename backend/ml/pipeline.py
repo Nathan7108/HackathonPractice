@@ -70,16 +70,37 @@ FEATURE_COLUMNS = [
     "economic_stress_score",
 ]
 
-MONITORED_COUNTRIES = {
-    "UA": {"name": "Ukraine", "iso3": "UKR", "acled_name": "Ukraine"},
-    "TW": {"name": "Taiwan", "iso3": "TWN", "acled_name": "Taiwan"},
-    "IR": {"name": "Iran", "iso3": "IRN", "acled_name": "Iran"},
-    "VE": {"name": "Venezuela", "iso3": "VEN", "acled_name": "Venezuela"},
-    "PK": {"name": "Pakistan", "iso3": "PAK", "acled_name": "Pakistan"},
-    "ET": {"name": "Ethiopia", "iso3": "ETH", "acled_name": "Ethiopia"},
-    "RS": {"name": "Serbia", "iso3": "SRB", "acled_name": "Serbia"},
-    "BR": {"name": "Brazil", "iso3": "BRA", "acled_name": "Brazil"},
-}
+def _load_countries() -> dict:
+    """Load MONITORED_COUNTRIES from data/countries.json; fallback to original 8 if missing."""
+    path = Path(__file__).resolve().parents[2] / "data" / "countries.json"
+    if path.exists():
+        with open(path, encoding="utf-8") as f:
+            entries = json.load(f)
+        return {
+            e["iso2"]: {
+                "name": e["name"],
+                "iso3": e["iso3"],
+                "acled_name": e.get("acled_name", e["name"]),
+                "lat": e.get("lat", 0),
+                "lng": e.get("lng", 0),
+                "region": e.get("region", ""),
+            }
+            for e in entries
+            if e.get("iso2")
+        }
+    return {
+        "UA": {"name": "Ukraine", "iso3": "UKR", "acled_name": "Ukraine", "lat": 48.38, "lng": 31.17, "region": "Europe"},
+        "TW": {"name": "Taiwan", "iso3": "TWN", "acled_name": "Taiwan", "lat": 23.70, "lng": 120.96, "region": "Asia"},
+        "IR": {"name": "Iran", "iso3": "IRN", "acled_name": "Iran", "lat": 32.43, "lng": 53.69, "region": "Middle East"},
+        "VE": {"name": "Venezuela", "iso3": "VEN", "acled_name": "Venezuela", "lat": 6.42, "lng": -66.59, "region": "Americas"},
+        "PK": {"name": "Pakistan", "iso3": "PAK", "acled_name": "Pakistan", "lat": 30.38, "lng": 69.35, "region": "Asia"},
+        "ET": {"name": "Ethiopia", "iso3": "ETH", "acled_name": "Ethiopia", "lat": 9.15, "lng": 40.49, "region": "Africa"},
+        "RS": {"name": "Serbia", "iso3": "SRB", "acled_name": "Serbia", "lat": 44.02, "lng": 21.01, "region": "Europe"},
+        "BR": {"name": "Brazil", "iso3": "BRA", "acled_name": "Brazil", "lat": -14.24, "lng": -51.93, "region": "Americas"},
+    }
+
+
+MONITORED_COUNTRIES = _load_countries()
 
 EMPTY_SENTIMENT = {
     "finbert_negative_score": 0.0,
@@ -217,7 +238,7 @@ class SentinelFeaturePipeline:
     @classmethod
     def compute_all_countries(cls) -> dict[str, dict]:
         """
-        Load data from disk for all 8 monitored countries and return {country_code: feature_dict}.
+        Load data from disk for all monitored countries (from countries.json) and return {country_code: feature_dict}.
         Graceful fallbacks: missing CSVs/JSON yield empty DataFrames or zero-filled dicts.
         """
         root = _repo_root()
@@ -241,12 +262,11 @@ class SentinelFeaturePipeline:
                     warnings.warn(f"GDELT {code}: {e}")
                     gdelt_df = pd.DataFrame()
             else:
-                warnings.warn(f"GDELT file not found: {gdelt_path}")
                 gdelt_df = pd.DataFrame()
 
-            # Load ACLED
-            acled_file = acled_name.lower().replace(" ", "_") + ".csv"
-            acled_path = data_acled / acled_file
+            # Load ACLED (same safe name as fetch_acled_all_countries)
+            _acled_safe = acled_name.lower().replace(" ", "_").replace("(", "").replace(")", "").replace("'", "").replace("-", "_").replace("__", "_")
+            acled_path = data_acled / f"{_acled_safe}.csv"
             if acled_path.exists():
                 try:
                     acled_df = pd.read_csv(acled_path)
@@ -254,7 +274,6 @@ class SentinelFeaturePipeline:
                     warnings.warn(f"ACLED {code}: {e}")
                     acled_df = pd.DataFrame()
             else:
-                warnings.warn(f"ACLED file not found: {acled_path}")
                 acled_df = pd.DataFrame()
 
             # Load UCDP GED
