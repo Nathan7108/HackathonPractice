@@ -222,60 +222,96 @@ def fetch_gdelt_all_countries(days_back: int = 3650) -> None:
 def compute_gdelt_features(df: pd.DataFrame, window_days: int = 30) -> dict:
     """
     Compute 10 ML-ready GDELT features per ML Guide Section 2.1.
-    Returns dict with exactly: gdelt_goldstein_mean, gdelt_goldstein_std,
-    gdelt_goldstein_min, gdelt_event_count, gdelt_avg_tone, gdelt_conflict_pct,
-    gdelt_goldstein_mean_90d, gdelt_event_acceleration, gdelt_mention_weighted_tone,
-    gdelt_volatility.
+    Handles BOTH formats:
+      - Raw GDELT events (SQLDATE, GoldsteinScale, NumMentions, AvgTone, EventCode)
+      - BigQuery weekly aggregates (has _weekly_aggregate column)
     """
+    zeros = {
+        "gdelt_goldstein_mean": 0.0, "gdelt_goldstein_std": 0.0,
+        "gdelt_goldstein_min": 0.0, "gdelt_event_count": 0,
+        "gdelt_avg_tone": 0.0, "gdelt_conflict_pct": 0.0,
+        "gdelt_goldstein_mean_90d": 0.0, "gdelt_event_acceleration": 0.0,
+        "gdelt_mention_weighted_tone": 0.0, "gdelt_volatility": 0.0,
+    }
     if df is None or df.empty:
-        return {
-            "gdelt_goldstein_mean": 0.0,
-            "gdelt_goldstein_std": 0.0,
-            "gdelt_goldstein_min": 0.0,
-            "gdelt_event_count": 0,
-            "gdelt_avg_tone": 0.0,
-            "gdelt_conflict_pct": 0.0,
-            "gdelt_goldstein_mean_90d": 0.0,
-            "gdelt_event_acceleration": 0.0,
-            "gdelt_mention_weighted_tone": 0.0,
-            "gdelt_volatility": 0.0,
-        }
+        return zeros
 
     df = df.copy()
-    df["date"] = pd.to_datetime(df["SQLDATE"].astype(str), format="%Y%m%d", errors="coerce")
-    df = df.dropna(subset=["date"])
-    # Use max date in dataset so stale data still produces correct features
-    ref_date = df["date"].max()
-    recent = df[df["date"] > ref_date - pd.Timedelta(days=window_days)]
-    recent_90 = df[df["date"] > ref_date - pd.Timedelta(days=90)]
+    is_weekly = "_weekly_aggregate" in df.columns
 
-    def sm(s):
-        return float(s.mean()) if len(s) > 0 else 0.0
+    if is_weekly:
+        df["date"] = pd.to_datetime(df["SQLDATE"].astype(str), format="%Y%m%d", errors="coerce")
+        df = df.dropna(subset=["date"])
+        if df.empty:
+            return zeros
 
-    def ss(s):
-        return float(s.std()) if len(s) > 1 else 0.0
+        ref_date = df["date"].max()
+        window_weeks = max(window_days // 7, 1)
+        recent = df[df["date"] > ref_date - pd.Timedelta(weeks=window_weeks)]
+        recent_90 = df[df["date"] > ref_date - pd.Timedelta(weeks=13)]
 
-    n_recent = len(recent)
-    n_90 = len(recent_90)
-    older_60_90 = max(n_90 - n_recent, 1)
-    goldstein = recent["GoldsteinScale"]
-    tone = recent["AvgTone"]
-    mentions = recent["NumMentions"]
+        if recent.empty:
+            return zeros
 
-    return {
-        "gdelt_goldstein_mean": sm(goldstein),
-        "gdelt_goldstein_std": ss(recent["GoldsteinScale"]),
-        "gdelt_goldstein_min": float(goldstein.min()) if n_recent > 0 else 0.0,
-        "gdelt_event_count": n_recent,
-        "gdelt_avg_tone": sm(tone),
-        "gdelt_conflict_pct": float(len(recent[recent["GoldsteinScale"] < -5]) / max(n_recent, 1)),
-        "gdelt_goldstein_mean_90d": sm(recent_90["GoldsteinScale"]),
-        "gdelt_event_acceleration": float(n_recent / older_60_90),
-        "gdelt_mention_weighted_tone": float(
-            (tone * mentions).sum() / max(mentions.sum(), 1)
-        ),
-        "gdelt_volatility": ss(recent["GoldsteinScale"]),
-    }
+        ec = recent["_event_count"].fillna(0)
+        ec_90 = recent_90["_event_count"].fillna(0)
+        n_recent = int(ec.sum())
+        n_90 = int(ec_90.sum())
+        older = max(n_90 - n_recent, 1)
+
+        def wmean(series, weights):
+            w = weights.fillna(0)
+            s = series.fillna(0)
+            tw = w.sum()
+            return float((s * w).sum() / tw) if tw > 0 else 0.0
+
+        return {
+            "gdelt_goldstein_mean": wmean(recent["GoldsteinScale"], ec),
+            "gdelt_goldstein_std": float(recent["_goldstein_std"].mean()),
+            "gdelt_goldstein_min": float(recent["_goldstein_min"].min()),
+            "gdelt_event_count": n_recent,
+            "gdelt_avg_tone": wmean(recent["AvgTone"], ec),
+            "gdelt_conflict_pct": wmean(recent["_conflict_pct"], ec),
+            "gdelt_goldstein_mean_90d": wmean(recent_90["GoldsteinScale"], ec_90),
+            "gdelt_event_acceleration": float(n_recent / older),
+            "gdelt_mention_weighted_tone": float(recent["_mention_weighted_tone"].mean()),
+            "gdelt_volatility": float(recent["_goldstein_std"].mean()),
+        }
+
+    else:
+        df["date"] = pd.to_datetime(df["SQLDATE"].astype(str), format="%Y%m%d", errors="coerce")
+        df = df.dropna(subset=["date"])
+        ref_date = df["date"].max()
+        recent = df[df["date"] > ref_date - pd.Timedelta(days=window_days)]
+        recent_90 = df[df["date"] > ref_date - pd.Timedelta(days=90)]
+
+        def sm(s):
+            return float(s.mean()) if len(s) > 0 else 0.0
+
+        def ss(s):
+            return float(s.std()) if len(s) > 1 else 0.0
+
+        n_recent = len(recent)
+        n_90 = len(recent_90)
+        older_60_90 = max(n_90 - n_recent, 1)
+        goldstein = recent["GoldsteinScale"]
+        tone = recent["AvgTone"]
+        mentions = recent["NumMentions"]
+
+        return {
+            "gdelt_goldstein_mean": sm(goldstein),
+            "gdelt_goldstein_std": ss(recent["GoldsteinScale"]),
+            "gdelt_goldstein_min": float(goldstein.min()) if n_recent > 0 else 0.0,
+            "gdelt_event_count": n_recent,
+            "gdelt_avg_tone": sm(tone),
+            "gdelt_conflict_pct": float(len(recent[recent["GoldsteinScale"] < -5]) / max(n_recent, 1)),
+            "gdelt_goldstein_mean_90d": sm(recent_90["GoldsteinScale"]),
+            "gdelt_event_acceleration": float(n_recent / older_60_90),
+            "gdelt_mention_weighted_tone": float(
+                (tone * mentions).sum() / max(mentions.sum(), 1)
+            ),
+            "gdelt_volatility": ss(recent["GoldsteinScale"]),
+        }
 
 
 if __name__ == "__main__":

@@ -53,7 +53,7 @@ def _fetch_indicator_via_api(indicator_code: str, country_iso3: str, mrv: int = 
         f"{country_iso3}/indicator/{indicator_code}?format=json&per_page={mrv}"
     )
     try:
-        r = requests.get(url, timeout=15)
+        r = requests.get(url, timeout=60)
         r.raise_for_status()
         payload = r.json()
         if not payload or len(payload) < 2:
@@ -128,6 +128,7 @@ def fetch_world_bank_all_countries(mrv: int = 30) -> None:
         if out_path.exists():
             continue
         try:
+            tqdm.write(f"  Fetching {iso3}...")
             features = fetch_world_bank_features(iso3, mrv=mrv)
             with open(out_path, "w", encoding="utf-8") as f:
                 json.dump({"iso3": iso3, "features": features}, f, indent=2)
