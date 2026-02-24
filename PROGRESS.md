@@ -11,7 +11,7 @@
 - [x] S2-02: Risk scorer (XGBoost)
 - [x] S2-03: Sentiment analyzer (FinBERT)
 - [x] S2-04: Risk forecaster (LSTM)
-- [ ] S3-01: FastAPI integration
+- [x] S3-01: FastAPI integration
 
 ## Environment
 - Python 3.11 (conda env: sentinel)
