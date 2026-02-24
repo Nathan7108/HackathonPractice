@@ -57,6 +57,19 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _safe_acled_name(name: str) -> str:
+    """Sanitize country/acled name for ACLED and UCDP filenames (match fetch_acled_all_countries and split_ucdp_global)."""
+    return (
+        name.lower()
+        .replace(" ", "_")
+        .replace("(", "")
+        .replace(")", "")
+        .replace("'", "")
+        .replace("-", "_")
+        .replace("__", "_")
+    )
+
+
 def _acled_features_from_group(group: pd.DataFrame, window_days: int = 30) -> dict:
     """
     Compute 10 ACLED features from a single group (e.g. one month of events).
@@ -121,9 +134,9 @@ def _load_country_auxiliary_features(root: Path, code: str, info: dict) -> dict:
             out.update(compute_gdelt_features(gdelt_df))
         except Exception:
             pass
-    # UCDP: data/ucdp/{acled_name}_ged.csv
+    # UCDP: data/ucdp/{acled_name}_ged.csv (same sanitization as split_ucdp_global)
     acled_name = info["acled_name"]
-    ucdp_path = root / "data" / "ucdp" / f"{acled_name.lower().replace(' ', '_')}_ged.csv"
+    ucdp_path = root / "data" / "ucdp" / f"{_safe_acled_name(acled_name)}_ged.csv"
     if ucdp_path.exists():
         try:
             ucdp_df = pd.read_csv(ucdp_path)
@@ -159,7 +172,7 @@ def build_training_dataset() -> pd.DataFrame:
 
     for code, info in MONITORED_COUNTRIES.items():
         acled_name = info["acled_name"]
-        acled_file = acled_name.lower().replace(" ", "_") + ".csv"
+        acled_file = _safe_acled_name(acled_name) + ".csv"
         acled_path = data_acled / acled_file
         if not acled_path.exists():
             continue
