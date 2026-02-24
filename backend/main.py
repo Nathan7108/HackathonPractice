@@ -19,7 +19,7 @@ from backend.ml.pipeline import (
     MONITORED_COUNTRIES,
     SentinelFeaturePipeline,
 )
-from backend.ml.risk_scorer import predict_risk
+from backend.ml.risk_scorer import predict_risk, level_from_score
 from backend.ml.anomaly import detect_anomaly
 from backend.ml.sentiment import load_finbert, analyze_headlines_sentiment
 from backend.ml.forecaster import forecast_risk, SEQUENCE_FEATURES
@@ -264,6 +264,7 @@ async def analyze_country(request: AnalyzeRequest):
     if anomaly["is_anomaly"]:
         risk_prediction = dict(risk_prediction)
         risk_prediction["risk_score"] = min(100, risk_prediction["risk_score"] + int(anomaly["anomaly_score"] * 15))
+        risk_prediction["risk_level"] = level_from_score(risk_prediction["risk_score"])
 
     tracker.log_prediction(country_code, risk_prediction, features, MODEL_VERSION)
 
