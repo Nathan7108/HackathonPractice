@@ -7,7 +7,7 @@
 - [x] S1-04: Fetch UCDP data
 - [x] S1-05: Fetch World Bank data
 - [x] S1-06: Feature engineering pipeline
-- [ ] S2-01: Anomaly detector (Isolation Forest)
+- [x] S2-01: Anomaly detector (Isolation Forest)
 - [ ] S2-02: Risk scorer (XGBoost)
 - [ ] S2-03: Sentiment analyzer (FinBERT)
 - [ ] S2-04: Risk forecaster (LSTM)
@@ -27,7 +27,7 @@
 - World Bank: None
 
 ## ML Models (status)
-- Anomaly Detector: NOT TRAINED
+- Anomaly Detector: Ready (train via `python -m backend.ml.anomaly` when GDELT data present)
 - Risk Scorer (XGBoost): NOT TRAINED
 - Sentiment (FinBERT): PRE-TRAINED (download only)
 - Forecaster (LSTM): NOT TRAINED
