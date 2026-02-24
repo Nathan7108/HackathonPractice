@@ -7,8 +7,8 @@
 - [x] S1-04: Fetch UCDP data
 - [x] S1-05: Fetch World Bank data
 - [x] S1-06: Feature engineering pipeline
-- [ ] S2-01: Anomaly detector (Isolation Forest)
-- [ ] S2-02: Risk scorer (XGBoost)
+- [x] S2-01: Anomaly detector (Isolation Forest)
+- [x] S2-02: Risk scorer (XGBoost)
 - [x] S2-03: Sentiment analyzer (FinBERT)
 - [ ] S2-04: Risk forecaster (LSTM)
 - [ ] S3-01: FastAPI integration
@@ -27,8 +27,8 @@
 - World Bank: None
 
 ## ML Models (status)
-- Anomaly Detector: NOT TRAINED
-- Risk Scorer (XGBoost): NOT TRAINED
+- Anomaly Detector: Ready (train via `python -m backend.ml.anomaly` when GDELT data present)
+- Risk Scorer (XGBoost): Ready (train via `python -m backend.ml.risk_scorer`; test accuracy ~100%, top 3: acled_fatality_rate, acled_fatalities_30d, acled_geographic_spread; training set 496 country-months)
 - Sentiment (FinBERT): PRE-TRAINED (download only)
 - Forecaster (LSTM): NOT TRAINED
 
