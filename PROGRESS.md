@@ -5,7 +5,7 @@
 - [x] S1-02: Fetch ACLED data
 - [x] S1-03: Fetch GDELT data
 - [x] S1-04: Fetch UCDP data
-- [ ] S1-05: Fetch World Bank data
+- [x] S1-05: Fetch World Bank data
 - [ ] S1-06: Feature engineering pipeline
 - [ ] S2-01: Anomaly detector (Isolation Forest)
 - [ ] S2-02: Risk scorer (XGBoost)
