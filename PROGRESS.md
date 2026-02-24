@@ -4,7 +4,7 @@
 - [x] S1-01: Project scaffolding
 - [x] S1-02: Fetch ACLED data
 - [x] S1-03: Fetch GDELT data
-- [x] S1-04: Fetch UCDP data
+- [x] S1-04: Fetch UCDP data (local CSV; API unused)
 - [ ] S1-05: Fetch World Bank data
 - [ ] S1-06: Feature engineering pipeline
 - [ ] S2-01: Anomaly detector (Isolation Forest)
@@ -23,7 +23,7 @@
 - OpenAI: OPENAI_API_KEY
 - NewsAPI: NEWS_API
 - GDELT: None
-- UCDP: None
+- UCDP: None (data from local CSVs in data/ucdp/, not API)
 - World Bank: None
 
 ## ML Models (status)
