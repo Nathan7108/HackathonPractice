@@ -32,6 +32,17 @@ REQUIRED_GDELT_COLUMNS = [
     "EventCode",
 ]
 
+# BigQuery weekly aggregate columns (one row per week)
+WEEKLY_GDELT_COLUMNS = [
+    "_weekly_aggregate",
+    "GoldsteinScale",
+    "_goldstein_std",
+    "_goldstein_min",
+    "_mentions_total",
+    "AvgTone",
+    "_event_count",
+]
+
 
 def _repo_root() -> Path:
     """Repo root: directory that contains data/gdelt/ (works from any cwd)."""
@@ -65,6 +76,7 @@ def _gdelt_path(country_code: str) -> Path:
 def _load_gdelt_csv(path: Path) -> pd.DataFrame | None:
     """
     Load GDELT CSV and verify required columns. Normalize column names (strip).
+    If _weekly_aggregate is present, treat as BigQuery weekly aggregate (one row per week).
     Returns None if file missing, empty, or columns invalid.
     """
     if not path.exists():
@@ -73,6 +85,12 @@ def _load_gdelt_csv(path: Path) -> pd.DataFrame | None:
         return None  # header-only or empty
     df = pd.read_csv(path)
     df.columns = df.columns.str.strip()
+    if "_weekly_aggregate" in df.columns:
+        missing = [c for c in WEEKLY_GDELT_COLUMNS if c not in df.columns]
+        if missing:
+            print(f"  Warning: {path.name} (weekly) missing columns: {missing}")
+            return None
+        return df
     missing = [c for c in REQUIRED_GDELT_COLUMNS if c not in df.columns]
     if missing:
         print(f"  Warning: {path.name} missing columns: {missing}")
@@ -85,32 +103,57 @@ def train_anomaly_detector(country_code: str, gdelt_df: pd.DataFrame):
     Train one Isolation Forest per country.
     Learns country-specific 'normal' baseline from weekly aggregates.
     Saves models/anomaly_{CC}.pkl and models/scaler_{CC}.pkl.
+    Supports both raw-event CSVs (groupby week) and BigQuery weekly aggregate CSVs (one row per week).
     """
     df = gdelt_df.copy()
-    # SQLDATE may be int (20260125) or float (20260125.0); normalize to YYYYMMDD string
-    sqldate = df["SQLDATE"].astype(str).str.replace(r"\.0$", "", regex=True)
-    df["date"] = pd.to_datetime(sqldate, format="%Y%m%d", errors="coerce")
-    df = df.dropna(subset=["date"])
-    for col in ["GoldsteinScale", "NumMentions", "AvgTone"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    df["week"] = df["date"].dt.to_period("W")
-    weekly = (
-        df.groupby("week")
-        .agg(
+    if "_weekly_aggregate" in df.columns:
+        # BigQuery weekly format: each row is already a week; map columns directly
+        for col in [
+            "GoldsteinScale",
+            "_goldstein_std",
+            "_goldstein_min",
+            "_mentions_total",
+            "AvgTone",
+            "_event_count",
+        ]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+        weekly = pd.DataFrame(
             {
-                "GoldsteinScale": ["mean", "std", "min"],
-                "NumMentions": "sum",
-                "AvgTone": "mean",
-                "EventCode": "count",
+                "goldstein_mean": df["GoldsteinScale"].values,
+                "goldstein_std": df["_goldstein_std"].values,
+                "goldstein_min": df["_goldstein_min"].values,
+                "mentions_total": df["_mentions_total"].values,
+                "avg_tone": df["AvgTone"].values,
+                "event_count": df["_event_count"].values,
             }
         )
-        .reset_index()
-    )
-    # Flatten MultiIndex columns to match ANOMALY_FEATURES order
-    weekly.columns = ["week"] + ANOMALY_FEATURES
-    weekly = weekly.fillna(0)
+        weekly = weekly.fillna(0)
+    else:
+        # Raw-event format: aggregate by week
+        sqldate = df["SQLDATE"].astype(str).str.replace(r"\.0$", "", regex=True)
+        df["date"] = pd.to_datetime(sqldate, format="%Y%m%d", errors="coerce")
+        df = df.dropna(subset=["date"])
+        for col in ["GoldsteinScale", "NumMentions", "AvgTone"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+        df["week"] = df["date"].dt.to_period("W")
+        weekly = (
+            df.groupby("week")
+            .agg(
+                {
+                    "GoldsteinScale": ["mean", "std", "min"],
+                    "NumMentions": "sum",
+                    "AvgTone": "mean",
+                    "EventCode": "count",
+                }
+            )
+            .reset_index()
+        )
+        weekly.columns = ["week"] + ANOMALY_FEATURES
+        weekly = weekly.fillna(0)
 
     n_weeks = len(weekly)
     if n_weeks < 10:
@@ -148,11 +191,14 @@ def train_all_anomaly_detectors() -> None:
             df = _load_gdelt_csv(csv_path)
             if df is None or len(df) == 0:
                 continue
-            df = df.copy()
-            sqldate = df["SQLDATE"].astype(str).str.replace(r"\.0$", "", regex=True)
-            df["date"] = pd.to_datetime(sqldate, format="%Y%m%d", errors="coerce")
-            df = df.dropna(subset=["date"])
-            weeks = df["date"].dt.to_period("W").nunique()
+            if "_weekly_aggregate" in df.columns:
+                weeks = len(df)
+            else:
+                df = df.copy()
+                sqldate = df["SQLDATE"].astype(str).str.replace(r"\.0$", "", regex=True)
+                df["date"] = pd.to_datetime(sqldate, format="%Y%m%d", errors="coerce")
+                df = df.dropna(subset=["date"])
+                weeks = df["date"].dt.to_period("W").nunique()
             if weeks < MIN_WEEKS_FOR_TRAINING:
                 continue
             train_anomaly_detector(country_code, df)

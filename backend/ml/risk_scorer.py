@@ -2,6 +2,7 @@
 # 47 features -> 5 risk levels (LOW/MODERATE/ELEVATED/HIGH/CRITICAL) with confidence.
 # See GitHub Issue #16.
 
+import json
 import warnings
 from pathlib import Path
 
@@ -13,6 +14,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
 from backend.ml.pipeline import FEATURE_COLUMNS, MONITORED_COUNTRIES
+from backend.ml.data.fetch_gdelt import compute_gdelt_features
+from backend.ml.data.fetch_ucdp import compute_ucdp_features
 
 RISK_LABELS = ["LOW", "MODERATE", "ELEVATED", "HIGH", "CRITICAL"]
 
@@ -103,9 +106,51 @@ def _label_from_fatalities(fatalities: float) -> str:
     return "LOW"
 
 
+def _load_country_auxiliary_features(root: Path, code: str, info: dict) -> dict:
+    """
+    Load GDELT, UCDP, and World Bank features for one country (country-level, not month-level).
+    Returns a single dict to merge into every training row for this country.
+    """
+    out = {}
+    # GDELT: data/gdelt/{ISO2}_events.csv, compute once for full file
+    gdelt_path = root / "data" / "gdelt" / f"{code}_events.csv"
+    if gdelt_path.exists():
+        try:
+            gdelt_df = pd.read_csv(gdelt_path)
+            gdelt_df.columns = gdelt_df.columns.str.strip()
+            out.update(compute_gdelt_features(gdelt_df))
+        except Exception:
+            pass
+    # UCDP: data/ucdp/{acled_name}_ged.csv
+    acled_name = info["acled_name"]
+    ucdp_path = root / "data" / "ucdp" / f"{acled_name.lower().replace(' ', '_')}_ged.csv"
+    if ucdp_path.exists():
+        try:
+            ucdp_df = pd.read_csv(ucdp_path)
+            out.update(compute_ucdp_features(ucdp_df))
+        except Exception:
+            pass
+    # World Bank: data/world_bank/{ISO3}.json
+    iso3 = info.get("iso3", "")
+    if iso3:
+        wb_path = root / "data" / "world_bank" / f"{iso3}.json"
+        if wb_path.exists():
+            try:
+                with open(wb_path, encoding="utf-8") as f:
+                    wb_data = json.load(f)
+                wb_features = wb_data.get("features", {}) or {}
+                out.update(
+                    {k: (v if v is not None else 0.0) for k, v in wb_features.items()}
+                )
+            except Exception:
+                pass
+    return out
+
+
 def build_training_dataset() -> pd.DataFrame:
     """
     Build labeled training dataset from ACLED (country-month aggregation).
+    Enriches each country-month with country-level GDELT, UCDP, and World Bank features.
     Returns DataFrame with FEATURE_COLUMNS + 'risk_label' + 'country_code'.
     """
     root = _repo_root()
@@ -131,8 +176,12 @@ def build_training_dataset() -> pd.DataFrame:
             continue
         acled_df["year_month"] = acled_df["event_date"].dt.to_period("M")
 
+        # Country-level features (same for every month of this country)
+        country_features = _load_country_auxiliary_features(root, code, info)
+
         for period, group in acled_df.groupby("year_month"):
             features = _acled_features_from_group(group, window_days=30)
+            features.update(country_features)
             for col in FEATURE_COLUMNS:
                 if col not in features:
                     features[col] = 0.0
@@ -240,7 +289,6 @@ def predict_risk(features: dict) -> dict:
     """
     Load trained model and predict risk from a 47-feature dict (e.g. from SentinelFeaturePipeline.compute()).
     Returns dict with risk_level, risk_score (0-100), confidence, probabilities, top_drivers (5 names).
-<<<<<<< HEAD
     risk_level is always derived from risk_score thresholds so they never contradict.
     """
     root = _repo_root()
