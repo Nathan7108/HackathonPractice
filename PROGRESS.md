@@ -9,7 +9,7 @@
 - [x] S1-06: Feature engineering pipeline
 - [x] S2-01: Anomaly detector (Isolation Forest)
 - [ ] S2-02: Risk scorer (XGBoost)
-- [ ] S2-03: Sentiment analyzer (FinBERT)
+- [x] S2-03: Sentiment analyzer (FinBERT)
 - [ ] S2-04: Risk forecaster (LSTM)
 - [ ] S3-01: FastAPI integration
 
