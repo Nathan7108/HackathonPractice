@@ -1,6 +1,8 @@
 # Sentinel AI — Progress Tracker
 
 ## Current State
+- [x] S0-01: Next.js scaffold + Tailwind + shadcn/ui + placeholder data (frontend/global-sentinel)
+- [x] S0-02: App shell — top nav, tab routing, conditional sidebar
 - [x] S1-01: Project scaffolding
 - [x] S1-02: Fetch ACLED data
 - [x] S1-03: Fetch GDELT data
@@ -16,7 +18,7 @@
 ## Environment
 - Python 3.11 (conda env: sentinel)
 - Backend: FastAPI on localhost:8000
-- Frontend: React+Vite on localhost:5173
+- Frontend: Next.js (global-sentinel) on localhost:3000; legacy React+Vite on localhost:5173
 
 ## API Keys Required
 - ACLED: OAuth (email/password → token)
