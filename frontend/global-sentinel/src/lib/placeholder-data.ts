@@ -1,0 +1,263 @@
+/**
+ * Sentinel AI — Placeholder mock data for all 8 watchlist countries.
+ * All content is PLACEHOLDER for scaffolding; replace with real data in later sprints.
+ */
+
+import type { CountryData } from "./types";
+
+const PLACEHOLDER_BRIEF = [
+  "PLACEHOLDER: This paragraph summarizes key risk factors and current assessment for the country. Replace with real intelligence brief in production.",
+  "PLACEHOLDER: Second paragraph covers trend direction and confidence. Replace with live analysis.",
+  "PLACEHOLDER: Third paragraph outlines recommended watchpoints. Replace with analyst notes.",
+];
+
+const PLACEHOLDER_CAUSAL_STEPS = [
+  { label: "Step 1", description: "PLACEHOLDER causal chain step description." },
+  { label: "Step 2", description: "PLACEHOLDER causal chain step description." },
+  { label: "Step 3", description: "PLACEHOLDER causal chain step description." },
+  { label: "Step 4", description: "PLACEHOLDER causal chain step description." },
+  { label: "Step 5", description: "PLACEHOLDER causal chain step description." },
+  { label: "Step 6", description: "PLACEHOLDER causal chain step description." },
+  { label: "Step 7", description: "PLACEHOLDER causal chain step description." },
+];
+
+const PLACEHOLDER_HEADLINES = [
+  { text: "PLACEHOLDER headline 1", sentiment: "neutral" },
+  { text: "PLACEHOLDER headline 2", sentiment: "negative" },
+  { text: "PLACEHOLDER headline 3", sentiment: "positive" },
+];
+
+const PLACEHOLDER_FEATURE_IMPORTANCE = [
+  { name: "PLACEHOLDER driver 1", percentage: 25 },
+  { name: "PLACEHOLDER driver 2", percentage: 20 },
+  { name: "PLACEHOLDER driver 3", percentage: 18 },
+  { name: "PLACEHOLDER driver 4", percentage: 15 },
+  { name: "PLACEHOLDER driver 5", percentage: 12 },
+];
+
+const PLACEHOLDER_INDUSTRIES = [
+  { industry: "Energy", impactLevel: "HIGH" },
+  { industry: "Manufacturing", impactLevel: "MODERATE" },
+  { industry: "Agriculture", impactLevel: "MODERATE" },
+  { industry: "Finance", impactLevel: "LOW" },
+  { industry: "Technology", impactLevel: "LOW" },
+  { industry: "Healthcare", impactLevel: "LOW" },
+];
+
+const PLACEHOLDER_ACTORS = [
+  { name: "PLACEHOLDER Actor 1", role: "Government", stance: "PLACEHOLDER" },
+  { name: "PLACEHOLDER Actor 2", role: "Opposition", stance: "PLACEHOLDER" },
+  { name: "PLACEHOLDER Actor 3", role: "Military", stance: "PLACEHOLDER" },
+  { name: "PLACEHOLDER Actor 4", role: "Civil society", stance: "PLACEHOLDER" },
+];
+
+export const WATCHLIST_COUNTRIES: CountryData[] = [
+  {
+    code: "UA",
+    name: "Ukraine",
+    flag: "🇺🇦",
+    riskScore: 87,
+    riskLevel: "HIGH",
+    confidence: 0.92,
+    subScores: {
+      conflictIntensity: 95,
+      socialUnrest: 72,
+      economicStress: 68,
+    },
+    anomaly: { detected: true, score: 0.88, severity: "HIGH" },
+    mlMetadata: {
+      topDrivers: ["PLACEHOLDER conflict", "PLACEHOLDER economic", "PLACEHOLDER social"],
+      dataSources: ["ACLED", "GDELT", "UCDP", "World Bank"],
+      modelVersion: "v1.0.0-PLACEHOLDER",
+    },
+    briefText: PLACEHOLDER_BRIEF,
+    causalChain: PLACEHOLDER_CAUSAL_STEPS,
+    headlines: PLACEHOLDER_HEADLINES,
+    featureImportance: PLACEHOLDER_FEATURE_IMPORTANCE,
+    forecast: { score30d: 86, score60d: 85, score90d: 84, trend: "stable" },
+    industryExposure: PLACEHOLDER_INDUSTRIES,
+    keyActors: PLACEHOLDER_ACTORS,
+  },
+  {
+    code: "IR",
+    name: "Iran",
+    flag: "🇮🇷",
+    riskScore: 79,
+    riskLevel: "HIGH",
+    confidence: 0.89,
+    subScores: {
+      conflictIntensity: 82,
+      socialUnrest: 71,
+      economicStress: 78,
+    },
+    anomaly: { detected: true, score: 0.75, severity: "HIGH" },
+    mlMetadata: {
+      topDrivers: ["PLACEHOLDER geopolitical", "PLACEHOLDER sanctions", "PLACEHOLDER domestic"],
+      dataSources: ["ACLED", "GDELT", "UCDP", "World Bank"],
+      modelVersion: "v1.0.0-PLACEHOLDER",
+    },
+    briefText: PLACEHOLDER_BRIEF,
+    causalChain: PLACEHOLDER_CAUSAL_STEPS,
+    headlines: PLACEHOLDER_HEADLINES,
+    featureImportance: PLACEHOLDER_FEATURE_IMPORTANCE,
+    forecast: { score30d: 78, score60d: 80, score90d: 81, trend: "rising" },
+    industryExposure: PLACEHOLDER_INDUSTRIES,
+    keyActors: PLACEHOLDER_ACTORS,
+  },
+  {
+    code: "PK",
+    name: "Pakistan",
+    flag: "🇵🇰",
+    riskScore: 63,
+    riskLevel: "ELEVATED",
+    confidence: 0.85,
+    subScores: {
+      conflictIntensity: 58,
+      socialUnrest: 68,
+      economicStress: 62,
+    },
+    anomaly: { detected: true, score: 0.62, severity: "ELEVATED" },
+    mlMetadata: {
+      topDrivers: ["PLACEHOLDER political", "PLACEHOLDER security", "PLACEHOLDER economic"],
+      dataSources: ["ACLED", "GDELT", "UCDP", "World Bank"],
+      modelVersion: "v1.0.0-PLACEHOLDER",
+    },
+    briefText: PLACEHOLDER_BRIEF,
+    causalChain: PLACEHOLDER_CAUSAL_STEPS,
+    headlines: PLACEHOLDER_HEADLINES,
+    featureImportance: PLACEHOLDER_FEATURE_IMPORTANCE,
+    forecast: { score30d: 64, score60d: 65, score90d: 66, trend: "rising" },
+    industryExposure: PLACEHOLDER_INDUSTRIES,
+    keyActors: PLACEHOLDER_ACTORS,
+  },
+  {
+    code: "ET",
+    name: "Ethiopia",
+    flag: "🇪🇹",
+    riskScore: 58,
+    riskLevel: "ELEVATED",
+    confidence: 0.81,
+    subScores: {
+      conflictIntensity: 65,
+      socialUnrest: 55,
+      economicStress: 52,
+    },
+    anomaly: { detected: true, score: 0.58, severity: "ELEVATED" },
+    mlMetadata: {
+      topDrivers: ["PLACEHOLDER conflict", "PLACEHOLDER drought", "PLACEHOLDER political"],
+      dataSources: ["ACLED", "GDELT", "UCDP", "World Bank"],
+      modelVersion: "v1.0.0-PLACEHOLDER",
+    },
+    briefText: PLACEHOLDER_BRIEF,
+    causalChain: PLACEHOLDER_CAUSAL_STEPS,
+    headlines: PLACEHOLDER_HEADLINES,
+    featureImportance: PLACEHOLDER_FEATURE_IMPORTANCE,
+    forecast: { score30d: 57, score60d: 56, score90d: 55, trend: "falling" },
+    industryExposure: PLACEHOLDER_INDUSTRIES,
+    keyActors: PLACEHOLDER_ACTORS,
+  },
+  {
+    code: "VE",
+    name: "Venezuela",
+    flag: "🇻🇪",
+    riskScore: 41,
+    riskLevel: "MODERATE",
+    confidence: 0.78,
+    subScores: {
+      conflictIntensity: 38,
+      socialUnrest: 48,
+      economicStress: 52,
+    },
+    anomaly: { detected: false, score: 0.35, severity: "LOW" },
+    mlMetadata: {
+      topDrivers: ["PLACEHOLDER economic", "PLACEHOLDER migration", "PLACEHOLDER political"],
+      dataSources: ["ACLED", "GDELT", "UCDP", "World Bank"],
+      modelVersion: "v1.0.0-PLACEHOLDER",
+    },
+    briefText: PLACEHOLDER_BRIEF,
+    causalChain: PLACEHOLDER_CAUSAL_STEPS,
+    headlines: PLACEHOLDER_HEADLINES,
+    featureImportance: PLACEHOLDER_FEATURE_IMPORTANCE,
+    forecast: { score30d: 42, score60d: 43, score90d: 44, trend: "stable" },
+    industryExposure: PLACEHOLDER_INDUSTRIES,
+    keyActors: PLACEHOLDER_ACTORS,
+  },
+  {
+    code: "TW",
+    name: "Taiwan",
+    flag: "🇹🇼",
+    riskScore: 38,
+    riskLevel: "MODERATE",
+    confidence: 0.82,
+    subScores: {
+      conflictIntensity: 45,
+      socialUnrest: 22,
+      economicStress: 28,
+    },
+    anomaly: { detected: true, score: 0.48, severity: "MODERATE" },
+    mlMetadata: {
+      topDrivers: ["PLACEHOLDER geopolitical", "PLACEHOLDER military", "PLACEHOLDER trade"],
+      dataSources: ["ACLED", "GDELT", "UCDP", "World Bank"],
+      modelVersion: "v1.0.0-PLACEHOLDER",
+    },
+    briefText: PLACEHOLDER_BRIEF,
+    causalChain: PLACEHOLDER_CAUSAL_STEPS,
+    headlines: PLACEHOLDER_HEADLINES,
+    featureImportance: PLACEHOLDER_FEATURE_IMPORTANCE,
+    forecast: { score30d: 39, score60d: 40, score90d: 41, trend: "rising" },
+    industryExposure: PLACEHOLDER_INDUSTRIES,
+    keyActors: PLACEHOLDER_ACTORS,
+  },
+  {
+    code: "RS",
+    name: "Serbia",
+    flag: "🇷🇸",
+    riskScore: 18,
+    riskLevel: "LOW",
+    confidence: 0.88,
+    subScores: {
+      conflictIntensity: 15,
+      socialUnrest: 22,
+      economicStress: 18,
+    },
+    anomaly: { detected: false, score: 0.12, severity: "LOW" },
+    mlMetadata: {
+      topDrivers: ["PLACEHOLDER regional", "PLACEHOLDER EU relations", "PLACEHOLDER domestic"],
+      dataSources: ["ACLED", "GDELT", "UCDP", "World Bank"],
+      modelVersion: "v1.0.0-PLACEHOLDER",
+    },
+    briefText: PLACEHOLDER_BRIEF,
+    causalChain: PLACEHOLDER_CAUSAL_STEPS,
+    headlines: PLACEHOLDER_HEADLINES,
+    featureImportance: PLACEHOLDER_FEATURE_IMPORTANCE,
+    forecast: { score30d: 17, score60d: 17, score90d: 18, trend: "stable" },
+    industryExposure: PLACEHOLDER_INDUSTRIES,
+    keyActors: PLACEHOLDER_ACTORS,
+  },
+  {
+    code: "BR",
+    name: "Brazil",
+    flag: "🇧🇷",
+    riskScore: 12,
+    riskLevel: "LOW",
+    confidence: 0.9,
+    subScores: {
+      conflictIntensity: 10,
+      socialUnrest: 14,
+      economicStress: 12,
+    },
+    anomaly: { detected: false, score: 0.08, severity: "LOW" },
+    mlMetadata: {
+      topDrivers: ["PLACEHOLDER political", "PLACEHOLDER crime", "PLACEHOLDER economic"],
+      dataSources: ["ACLED", "GDELT", "UCDP", "World Bank"],
+      modelVersion: "v1.0.0-PLACEHOLDER",
+    },
+    briefText: PLACEHOLDER_BRIEF,
+    causalChain: PLACEHOLDER_CAUSAL_STEPS,
+    headlines: PLACEHOLDER_HEADLINES,
+    featureImportance: PLACEHOLDER_FEATURE_IMPORTANCE,
+    forecast: { score30d: 12, score60d: 12, score90d: 13, trend: "stable" },
+    industryExposure: PLACEHOLDER_INDUSTRIES,
+    keyActors: PLACEHOLDER_ACTORS,
+  },
+];
