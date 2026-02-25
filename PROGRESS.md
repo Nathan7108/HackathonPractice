@@ -5,6 +5,8 @@
 - [x] S0-02: App shell — top nav, tab routing, conditional sidebar
 - [x] S0-03: Dashboard tab — KPI cards, Recharts, risk table, regional breakdown
 - [x] S0-04: Globe tab — Mapbox 3D globe, risk coloring, detail panel, overlays
+- [x] S0-05: Analytics tab — country table, scatter plots, chart grid
+- [x] S0-06: Country Intel tab — 11 sections, causal chain, two-column layout
 - [x] S1-01: Project scaffolding
 - [x] S1-02: Fetch ACLED data
 - [x] S1-03: Fetch GDELT data
