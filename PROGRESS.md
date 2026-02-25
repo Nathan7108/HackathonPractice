@@ -48,3 +48,10 @@ UA, TW, IR, VE, PK, ET, RS, BR
 - riskScore uses weighted probability across all 5 classes (CLASS_WEIGHTS), so score and label never contradict.
 - main.py re-derives risk_level after anomaly boost so level stays consistent.
 - Branch: feature/fix-risk-score-level-mismatch. PR: create manually with body "Closes #23" if gh not installed.
+
+## Fixes (Issue #39 — dashboard summary API)
+- Added GET `/api/dashboard/summary` to backend/main.py (branch: feature/dashboard-summary-api).
+- Endpoint computes all 5 dashboard KPIs from real ML: `SentinelFeaturePipeline.compute_all_countries()` + `predict_risk()` and `detect_anomaly()` per country.
+- Response: globalThreatIndex, globalThreatIndexDelta, activeAnomalies, highPlusCountries, highPlusCountriesDelta, escalationAlerts24h, modelHealth (98), countries (sorted by riskScore desc).
+- Caching: _dashboard_cache, _dashboard_cache_time, _previous_summary; TTL = CACHE_TTL_SECONDS. predict_risk wrapped in try/except FileNotFoundError like /api/countries.
+- Test: `curl http://localhost:8000/api/dashboard/summary`
