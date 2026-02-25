@@ -7,11 +7,14 @@ import warnings
 from pathlib import Path
 
 import joblib
+import numpy as np
 import pandas as pd
 import xgboost as xgb
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
+
+from collections import Counter
 
 from backend.ml.pipeline import FEATURE_COLUMNS, MONITORED_COUNTRIES
 from backend.ml.data.fetch_gdelt import compute_gdelt_features
@@ -107,34 +110,88 @@ def _acled_features_from_group(group: pd.DataFrame, window_days: int = 30) -> di
     }
 
 
-def _label_from_fatalities(fatalities: float) -> str:
-    if fatalities >= 500:
+def _acled_features_from_period(full_df: pd.DataFrame, period, window_days: int = 30) -> dict:
+    """
+    Compute ACLED features for a given period using full country DataFrame for proper 90-day windows.
+    """
+    month_end = period.to_timestamp() + pd.offsets.MonthEnd(0)
+    month_start = period.to_timestamp()
+
+    recent_30 = full_df[(full_df["event_date"] > month_end - pd.Timedelta(days=30)) & (full_df["event_date"] <= month_end)]
+    recent_90 = full_df[(full_df["event_date"] > month_end - pd.Timedelta(days=90)) & (full_df["event_date"] <= month_end)]
+    older_60 = full_df[(full_df["event_date"] > month_end - pd.Timedelta(days=90)) & (full_df["event_date"] <= month_end - pd.Timedelta(days=30))]
+
+    # Current month group
+    current = full_df[(full_df["event_date"] >= month_start) & (full_df["event_date"] <= month_end)]
+
+    if current.empty:
+        return {
+            "acled_fatalities_30d": 0.0,
+            "acled_battle_count": 0,
+            "acled_civilian_violence": 0,
+            "acled_explosion_count": 0,
+            "acled_protest_count": 0,
+            "acled_fatality_rate": 0.0,
+            "acled_event_count_90d": len(recent_90),
+            "acled_event_acceleration": float(len(recent_30) / max(len(older_60), 1)),
+            "acled_unique_actors": 0,
+            "acled_geographic_spread": 0,
+        }
+
+    fatalities = pd.to_numeric(current["fatalities"], errors="coerce").fillna(0)
+    total_fatal = float(fatalities.sum())
+    event_type = current["event_type"].astype(str)
+
+    return {
+        "acled_fatalities_30d": total_fatal,
+        "acled_battle_count": int((event_type == "Battles").sum()),
+        "acled_civilian_violence": int((event_type == "Violence against civilians").sum()),
+        "acled_explosion_count": int((event_type == "Explosions/Remote violence").sum()),
+        "acled_protest_count": int(event_type.isin(["Protests", "Riots"]).sum()),
+        "acled_fatality_rate": total_fatal / max(window_days, 1),
+        "acled_event_count_90d": len(recent_90),
+        "acled_event_acceleration": float(len(recent_30) / max(len(older_60), 1)),
+        "acled_unique_actors": int(current["actor1"].nunique()) if "actor1" in current.columns else 0,
+        "acled_geographic_spread": int(current["admin1"].nunique()) if "admin1" in current.columns else 0,
+    }
+
+
+def _label_from_events(group) -> str:
+    """Composite risk label from fatalities and event diversity (battles, explosions, etc.)."""
+    fatalities = pd.to_numeric(group.get("fatalities", pd.Series(0)), errors="coerce").fillna(0).sum()
+    event_type = group.get("event_type", pd.Series(dtype=object)).astype(str)
+    battles = (event_type == "Battles").sum()
+    explosions = (event_type == "Explosions/Remote violence").sum()
+    civilian_violence = (event_type == "Violence against civilians").sum()
+    protests = event_type.isin(["Protests", "Riots"]).sum()
+
+    # Composite score: fatalities dominate, but event diversity matters
+    score = (
+        fatalities * 1.0
+        + battles * 5.0
+        + explosions * 4.0
+        + civilian_violence * 3.0
+        + protests * 0.2
+    )
+
+    if score >= 1000:
         return "CRITICAL"
-    if fatalities >= 200:
+    if score >= 400:
         return "HIGH"
-    if fatalities >= 50:
+    if score >= 100:
         return "ELEVATED"
-    if fatalities >= 10:
+    if score >= 20:
         return "MODERATE"
     return "LOW"
 
 
 def _load_country_auxiliary_features(root: Path, code: str, info: dict) -> dict:
     """
-    Load GDELT, UCDP, and World Bank features for one country (country-level, not month-level).
-    Returns a single dict to merge into every training row for this country.
+    Load UCDP and World Bank features for one country (country-level, not month-level).
+    GDELT is loaded per-period in build_training_dataset() for month-specific features.
     """
     out = {}
-    # GDELT: data/gdelt/{ISO2}_events.csv, compute once for full file
-    gdelt_path = root / "data" / "gdelt" / f"{code}_events.csv"
-    if gdelt_path.exists():
-        try:
-            gdelt_df = pd.read_csv(gdelt_path)
-            gdelt_df.columns = gdelt_df.columns.str.strip()
-            out.update(compute_gdelt_features(gdelt_df))
-        except Exception:
-            pass
-    # UCDP: data/ucdp/{acled_name}_ged.csv (same sanitization as split_ucdp_global)
+    # UCDP: data/ucdp/{acled_name}_ged.csv (same sanitization as split_ucdp_global); fallback glob (Issue #27)
     acled_name = info["acled_name"]
     ucdp_path = root / "data" / "ucdp" / f"{_safe_acled_name(acled_name)}_ged.csv"
     if not ucdp_path.exists():
@@ -142,6 +199,8 @@ def _load_country_auxiliary_features(root: Path, code: str, info: dict) -> dict:
         first_word = acled_name.split()[0].lower()
         if first_word and len(first_word) > 1:
             candidates = list(ucdp_dir.glob(f"*{first_word}*_ged.csv"))
+            if not candidates:
+                candidates = list(ucdp_dir.glob(f"*{first_word}*ged*.csv"))
             if candidates:
                 ucdp_path = candidates[0]
     if ucdp_path.exists():
@@ -170,7 +229,7 @@ def _load_country_auxiliary_features(root: Path, code: str, info: dict) -> dict:
 def build_training_dataset() -> pd.DataFrame:
     """
     Build labeled training dataset from ACLED (country-month aggregation).
-    Enriches each country-month with country-level GDELT, UCDP, and World Bank features.
+    Enriches each country-month with month-specific GDELT, rolling ACLED 90d, UCDP, and World Bank.
     Returns DataFrame with FEATURE_COLUMNS + 'risk_label' + 'country_code'.
     """
     root = _repo_root()
@@ -196,19 +255,42 @@ def build_training_dataset() -> pd.DataFrame:
             continue
         acled_df["year_month"] = acled_df["event_date"].dt.to_period("M")
 
-        # Country-level features (same for every month of this country)
+        # GDELT: load once per country, parse dates for per-period windowing
+        gdelt_df = None
+        gdelt_path = root / "data" / "gdelt" / f"{code}_events.csv"
+        if gdelt_path.exists():
+            try:
+                gdelt_df = pd.read_csv(gdelt_path)
+                gdelt_df.columns = gdelt_df.columns.str.strip()
+                gdelt_df["date"] = pd.to_datetime(gdelt_df["SQLDATE"].astype(str), format="%Y%m%d", errors="coerce")
+                gdelt_df = gdelt_df.dropna(subset=["date"])
+            except Exception:
+                gdelt_df = None
+
+        # Country-level features (UCDP + World Bank only; GDELT is per-period below)
         country_features = _load_country_auxiliary_features(root, code, info)
 
         for period, group in acled_df.groupby("year_month"):
-            features = _acled_features_from_group(group, window_days=30)
+            features = _acled_features_from_period(acled_df, period, window_days=30)
             features.update(country_features)
+
+            # Month-specific GDELT features
+            if gdelt_df is not None and not gdelt_df.empty:
+                month_end = period.to_timestamp() + pd.offsets.MonthEnd(0)
+                mask_90 = gdelt_df["date"] > (month_end - pd.Timedelta(days=90))
+                gdelt_window = gdelt_df[mask_90 & (gdelt_df["date"] <= month_end)]
+                if not gdelt_window.empty:
+                    gdelt_features = compute_gdelt_features(gdelt_window, window_days=30)
+                else:
+                    gdelt_features = compute_gdelt_features(pd.DataFrame(), window_days=30)
+                features.update(gdelt_features)
+            else:
+                features.update(compute_gdelt_features(pd.DataFrame(), window_days=30))
+
             for col in FEATURE_COLUMNS:
                 if col not in features:
                     features[col] = 0.0
-            fatalities = float(
-                pd.to_numeric(group.get("fatalities", pd.Series(0)), errors="coerce").fillna(0).sum()
-            )
-            features["risk_label"] = _label_from_fatalities(fatalities)
+            features["risk_label"] = _label_from_events(group)
             features["country_code"] = code
             frames.append(features)
 
@@ -259,14 +341,21 @@ def train_risk_scorer(training_df: pd.DataFrame):
     y = le.transform(df["risk_label"].astype(str))
     X = df[FEATURE_COLUMNS].fillna(0)
 
+    # Class weighting: inverse frequency so LOW does not dominate
+    counts = Counter(y)
+    total = len(y)
+    n_classes = len(counts)
+    weights = {cls: total / (n_classes * count) for cls, count in counts.items()}
+    sample_weights = np.array([weights[label] for label in y])
+
     stratify_arg = y if all((y == i).sum() >= 2 for i in range(len(le.classes_))) else None
     try:
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=stratify_arg
+        X_train, X_test, y_train, y_test, sw_train, sw_test = train_test_split(
+            X, y, sample_weights, test_size=0.2, random_state=42, stratify=stratify_arg
         )
     except ValueError:
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42
+        X_train, X_test, y_train, y_test, sw_train, sw_test = train_test_split(
+            X, y, sample_weights, test_size=0.2, random_state=42
         )
 
     fit_kw = {}
@@ -286,7 +375,7 @@ def train_risk_scorer(training_df: pd.DataFrame):
     if len(X_test) >= 10:
         model_kw["early_stopping_rounds"] = 20
     model = xgb.XGBClassifier(**model_kw)
-    model.fit(X_train, y_train, **fit_kw)
+    model.fit(X_train, y_train, sample_weight=sw_train, **fit_kw)
 
     y_pred = model.predict(X_test)
     target_names = [le.inverse_transform([i])[0] for i in range(len(le.classes_))]
