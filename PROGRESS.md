@@ -7,6 +7,7 @@
 - [x] S0-04: Globe tab — Mapbox 3D globe, risk coloring, detail panel, overlays
 - [x] S0-05: Analytics tab — country table, scatter plots, chart grid
 - [x] S0-06: Country Intel tab — 11 sections, causal chain, two-column layout
+- [x] S0-07: Threat Feed tab — event stream, filters, summary sidebar
 - [x] S1-01: Project scaffolding
 - [x] S1-02: Fetch ACLED data
 - [x] S1-03: Fetch GDELT data
