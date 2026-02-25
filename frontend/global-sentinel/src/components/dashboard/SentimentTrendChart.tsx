@@ -10,16 +10,15 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { PanelHeader } from "@/components/dashboard/PanelHeader";
 import { SENTIMENT_TREND_30D } from "@/lib/dashboard-data";
 
 export function SentimentTrendChart() {
   return (
-    <Card>
-      <CardHeader>
-        <h3 className="text-sm font-semibold">Global Headline Sentiment (30d)</h3>
-      </CardHeader>
-      <CardContent>
+    <Card className="p-0 border border-border rounded-sm shadow-none h-full min-h-0 flex flex-col">
+      <PanelHeader title="Global Headline Sentiment (30d)" />
+      <CardContent className="p-3 flex-1 min-h-0">
         <div className="h-[280px]">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
@@ -49,8 +48,8 @@ export function SentimentTrendChart() {
                 dataKey="escalatory"
                 name="Escalatory"
                 stackId="1"
-                stroke="hsl(0, 84%, 60%)"
-                fill="hsl(0, 84%, 60%)"
+                stroke="#dc2626"
+                fill="#dc2626"
                 fillOpacity={0.6}
               />
               <Area
@@ -58,8 +57,8 @@ export function SentimentTrendChart() {
                 dataKey="neutral"
                 name="Neutral"
                 stackId="1"
-                stroke="hsl(var(--muted-foreground))"
-                fill="hsl(var(--muted))"
+                stroke="#94a3b8"
+                fill="#94a3b8"
                 fillOpacity={0.6}
               />
               <Area
@@ -67,8 +66,8 @@ export function SentimentTrendChart() {
                 dataKey="deescalatory"
                 name="De-escalatory"
                 stackId="1"
-                stroke="hsl(142, 76%, 36%)"
-                fill="hsl(142, 76%, 36%)"
+                stroke="#22c55e"
+                fill="#22c55e"
                 fillOpacity={0.6}
               />
             </AreaChart>

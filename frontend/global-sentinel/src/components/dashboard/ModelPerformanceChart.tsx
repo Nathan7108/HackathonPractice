@@ -9,16 +9,15 @@ import {
   CartesianGrid,
   Tooltip,
 } from "recharts";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { PanelHeader } from "@/components/dashboard/PanelHeader";
 import { MODEL_PERFORMANCE } from "@/lib/dashboard-data";
 
 export function ModelPerformanceChart() {
   return (
-    <Card>
-      <CardHeader>
-        <h3 className="text-sm font-semibold">Model Performance (Accuracy)</h3>
-      </CardHeader>
-      <CardContent>
+    <Card className="p-0 border border-border rounded-sm shadow-none h-full min-h-0 flex flex-col">
+      <PanelHeader title="Model Performance (Accuracy)" />
+      <CardContent className="p-3 flex-1 min-h-0">
         <div className="h-[280px]">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
@@ -50,10 +49,11 @@ export function ModelPerformanceChart() {
               <Line
                 type="monotone"
                 dataKey="accuracy"
-                stroke="hsl(var(--primary))"
+                stroke="#4361ee"
                 strokeWidth={2}
-                dot={{ r: 3 }}
-                activeDot={{ r: 4 }}
+                dot={{ r: 4, fill: "#4361ee", strokeWidth: 0 }}
+                activeDot={{ r: 5, fill: "#4361ee", stroke: "#4361ee" }}
+                isAnimationActive={true}
               />
             </LineChart>
           </ResponsiveContainer>

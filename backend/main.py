@@ -457,6 +457,9 @@ async def api_dashboard_summary():
 
     escalation_alerts_24h = sum(1 for r in country_rows if r["anomalyScore"] > 0.5)
 
+    accuracy_result = tracker.compute_accuracy(days_back=90)
+    model_health = round(accuracy_result["accuracy_pct"], 1)
+
     countries_sorted = sorted(country_rows, key=lambda r: r["riskScore"], reverse=True)
 
     result = {
@@ -466,7 +469,7 @@ async def api_dashboard_summary():
         "highPlusCountries": high_plus_countries,
         "highPlusCountriesDelta": high_plus_delta,
         "escalationAlerts24h": escalation_alerts_24h,
-        "modelHealth": 98,
+        "modelHealth": model_health,
         "countries": countries_sorted,
     }
 

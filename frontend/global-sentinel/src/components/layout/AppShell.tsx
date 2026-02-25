@@ -19,19 +19,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div
           className={cn(
             "relative z-10 h-full flex items-center shrink-0 rounded-tl-lg transition-all duration-200",
-            isCollapsed ? "w-12" : "w-[260px]"
+            isCollapsed ? "w-[60px] justify-center" : "w-[260px]"
           )}
           aria-label="App sidebar"
           aria-expanded={!isCollapsed}
         >
-          <Link
-            href="/dashboard"
-            className={cn("h-full flex items-center justify-center shrink-0", isCollapsed ? "w-8" : "w-14")}
-            aria-label="Sentinel AI home"
+          {!isCollapsed && (
+            <Link
+              href="/dashboard"
+              className="h-full flex items-center justify-center shrink-0 w-14"
+              aria-label="Sentinel AI home"
+            >
+              <Globe className="text-primary h-6 w-6" aria-hidden />
+            </Link>
+          )}
+          <div
+            className={cn(
+              "flex items-center h-full",
+              isCollapsed ? "absolute inset-0 justify-center" : "flex-1 min-w-0 justify-between px-2"
+            )}
           >
-            <Globe className={cn("text-primary", isCollapsed ? "h-5 w-5" : "h-6 w-6")} aria-hidden />
-          </Link>
-          <div className="flex-1 min-w-0 flex items-center justify-between px-2 h-full">
             {!isCollapsed && (
               <span className="font-semibold text-slate-800 truncate">Sentinel AI</span>
             )}
@@ -60,7 +67,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <aside
           className={cn(
             "z-10 flex-shrink-0 flex flex-col bg-[#F6F9FB] rounded-tl-lg overflow-hidden self-stretch transition-all duration-200",
-            isCollapsed ? "w-12" : "w-[260px]"
+            isCollapsed ? "w-[60px]" : "w-[260px]"
           )}
         >
           <Sidebar

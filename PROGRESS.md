@@ -55,3 +55,10 @@ UA, TW, IR, VE, PK, ET, RS, BR
 - Response: globalThreatIndex, globalThreatIndexDelta, activeAnomalies, highPlusCountries, highPlusCountriesDelta, escalationAlerts24h, modelHealth (98), countries (sorted by riskScore desc).
 - Caching: _dashboard_cache, _dashboard_cache_time, _previous_summary; TTL = CACHE_TTL_SECONDS. predict_risk wrapped in try/except FileNotFoundError like /api/countries.
 - Test: `curl http://localhost:8000/api/dashboard/summary`
+
+## Fixes (Issue #40 — dashboard KPI wiring)
+- Branch: feature/dashboard-kpi-wiring.
+- Added `frontend/global-sentinel/src/lib/api.ts`: API_BASE from NEXT_PUBLIC_API_URL (default http://localhost:8000), `fetchDashboardSummary()`.
+- Added `.env.local`: NEXT_PUBLIC_API_URL=http://localhost:8000.
+- KpiCardRow: client component with useState(data null, loading true), useEffect calling fetchDashboardSummary(); maps response to Global Threat Index, Active Anomalies, HIGH+ Risk Countries, Escalation Alerts (24h), Model Health; placeholder values when data is null; pulse animation on value text while loading. KpiCard accepts optional `isLoading` for pulse.
+- `npm run build` passes.

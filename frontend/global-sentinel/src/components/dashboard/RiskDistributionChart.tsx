@@ -1,57 +1,58 @@
 "use client";
 
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  ResponsiveContainer,
-  Cell,
-} from "recharts";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { PanelHeader } from "@/components/dashboard/PanelHeader";
 import { RISK_DISTRIBUTION } from "@/lib/dashboard-data";
 
 const TIER_COLORS: Record<string, string> = {
-  LOW: "hsl(142, 76%, 36%)",
-  MODERATE: "hsl(48, 96%, 53%)",
-  ELEVATED: "hsl(25, 95%, 53%)",
-  HIGH: "hsl(0, 84%, 60%)",
-  CRITICAL: "hsl(0, 72%, 51%)",
+  LOW: "#22c55e",
+  MODERATE: "#eab308",
+  ELEVATED: "#f97316",
+  HIGH: "#dc2626",
+  CRITICAL: "#7f1d1d",
 };
 
+const ORDER: Array<keyof typeof TIER_COLORS> = [
+  "LOW",
+  "MODERATE",
+  "ELEVATED",
+  "HIGH",
+  "CRITICAL",
+];
+
 export function RiskDistributionChart() {
+  const total = RISK_DISTRIBUTION.reduce((s, e) => s + e.count, 0);
+  const segments = ORDER.map((tier) => {
+    const entry = RISK_DISTRIBUTION.find((e) => e.tier === tier);
+    const count = entry?.count ?? 0;
+    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+    return { tier, count, pct, color: TIER_COLORS[tier] };
+  }).filter((s) => s.pct > 0);
+
   return (
-    <Card>
-      <CardHeader>
-        <h3 className="text-sm font-semibold">Risk Distribution</h3>
-      </CardHeader>
-      <CardContent>
-        <div className="h-[220px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={RISK_DISTRIBUTION}
-              margin={{ top: 8, right: 8, bottom: 8, left: 8 }}
-              layout="vertical"
+    <Card className="p-0 border border-border rounded-sm shadow-none h-full min-h-0 flex flex-col">
+      <PanelHeader title="Risk Distribution" />
+      <CardContent className="p-3 flex-1 min-h-0">
+        {/* Single horizontal stacked bar with percentage labels ON the bar */}
+        <div className="flex h-8 w-full rounded-sm overflow-hidden bg-gray-100">
+          {segments.map(({ tier, pct, color }) => (
+            <div
+              key={tier}
+              className="h-full flex items-center justify-center transition-[width]"
+              style={{
+                width: `${pct}%`,
+                minWidth: pct > 0 ? "2px" : 0,
+                backgroundColor: color,
+              }}
+              title={`${tier}: ${pct}%`}
             >
-              <XAxis type="number" hide />
-              <YAxis
-                type="category"
-                dataKey="tier"
-                width={80}
-                tick={{ fontSize: 11 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={28}>
-                {RISK_DISTRIBUTION.map((entry, index) => (
-                  <Cell
-                    key={entry.tier}
-                    fill={TIER_COLORS[entry.tier] ?? "hsl(var(--muted))"}
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+              {pct >= 8 && (
+                <span className="text-[10px] font-semibold text-white drop-shadow-[0_0_1px_rgba(0,0,0,0.8)] truncate px-0.5">
+                  {pct}%
+                </span>
+              )}
+            </div>
+          ))}
         </div>
       </CardContent>
     </Card>

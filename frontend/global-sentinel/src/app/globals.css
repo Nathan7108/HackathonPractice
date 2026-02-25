@@ -120,7 +120,18 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    scrollbar-gutter: stable;
+    scrollbar-width: none;
+  }
   body {
     @apply bg-background text-foreground;
+  }
+  /* Hide scrollbar, keep scroll behavior (Chrome, Safari, Edge) */
+  *::-webkit-scrollbar {
+    display: none;
+  }
+  * {
+    -ms-overflow-style: none;
   }
 }

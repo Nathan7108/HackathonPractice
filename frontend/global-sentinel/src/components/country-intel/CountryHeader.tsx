@@ -17,7 +17,7 @@ type Props = { country: CountryData };
 
 export function CountryHeader({ country }: Props) {
   return (
-    <header className="sticky top-[52px] z-20 flex items-center justify-between gap-4 p-4 bg-card border-b border-border shadow-sm">
+    <section className="flex items-center justify-between gap-4 p-4 bg-card border-b border-border" aria-label="Country overview">
       <div className="flex items-center gap-4 min-w-0">
         <span className="text-4xl shrink-0" aria-hidden>{country.flag}</span>
         <div>
@@ -50,6 +50,6 @@ export function CountryHeader({ country }: Props) {
           </SelectContent>
         </Select>
       </div>
-    </header>
+    </section>
   );
 }

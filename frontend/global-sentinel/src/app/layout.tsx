@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { TopNav } from "@/components/layout/TopNav";
+import { AppShell } from "@/components/layout/AppShell";
 import "./globals.css";
 
 const inter = Inter({
@@ -23,10 +23,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <TooltipProvider>
-          <div className="min-h-screen flex flex-col">
-            <TopNav />
-            {children}
-          </div>
+          <AppShell>{children}</AppShell>
         </TooltipProvider>
       </body>
     </html>
