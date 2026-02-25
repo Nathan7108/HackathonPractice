@@ -3,6 +3,7 @@
 ## Current State
 - [x] S0-01: Next.js scaffold + Tailwind + shadcn/ui + placeholder data (frontend/global-sentinel)
 - [x] S0-02: App shell — top nav, tab routing, conditional sidebar
+- [x] S0-03: Dashboard tab — KPI cards, Recharts, risk table, regional breakdown
 - [x] S1-01: Project scaffolding
 - [x] S1-02: Fetch ACLED data
 - [x] S1-03: Fetch GDELT data
